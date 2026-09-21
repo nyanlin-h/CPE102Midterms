@@ -2,14 +2,14 @@ import cv2
 import numpy as np
 import time
 
-cap = cv2.VideoCapture(0) # check if needed to change ports
+cap = cv2.VideoCapture(2) # check if needed to change ports
 time.sleep(3)   # reduce this if we dont get config time (but test first)
 
-colour_stones = {
-    "Violet" : ((125, 100, 80), (145, 200, 210), (127, 0, 255)),
-    "Cyan" : ((0, 0, 0), (0, 0, 0), (0, 0, 0)),
-    "Crimson" : ((0, 0, 0), (0, 0, 0), (0, 0, 0)),
-    "Marigold" : ((0, 0, 0), (0, 0, 0), (0, 0, 0)),
+colour_area = {
+    "Violet" : ((125, 100, 80), (145, 200, 210), (145, 50, 180)),   #readjust all values later
+    "Cyan" : ((90, 180, 230), (100, 220, 250), (250, 220, 50)),
+    "Crimson" : ((170, 190, 230), (180, 210, 250), (65, 50, 240)),
+    "Marigold" : ((0, 0, 0), (15, 225, 255), (33, 107, 255)),
     "Sky_Blue" : ((0, 0, 0), (0, 0, 0), (0, 0, 0)),
     "Lime_Green" : ((0, 0, 0), (0, 0, 0), (0, 0, 0))
 }
@@ -28,7 +28,7 @@ while True:
     hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     
 
-    for name, (lower, upper, bgr) in colour_stones.items():
+    for name, (lower, upper, bgr) in colour_area.items():
         mask = cv2.inRange(hsv_frame, np.array(lower), np.array(upper))
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -58,7 +58,7 @@ while True:
             with open("map_drop_off.txt", "w") as f: 
                 for name, coords in drop_off_areas.items():
                     f.write(f"{name}, {coords[0]}, {coords[1]}\n")
-            print(f"\nSaved {len(drop_off_areas)} zones to 'map_drop_off.txt'") 
+            print(f"\nSaved {len(drop_off_areas)} zones to 'map_drop_off.txt'") #dont forget to reconnect to the values of the stones
         else:
             print("No colors detected yet! Can't save empty map.")
 
