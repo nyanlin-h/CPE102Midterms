@@ -71,7 +71,7 @@ void loop() {
 
     switch (command) {
       case 'F':
-        moveForwad();
+        moveForward();
         break;
 
       case 'B';

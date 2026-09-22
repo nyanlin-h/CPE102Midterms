@@ -13,7 +13,7 @@ def get_color_values(event, x, y, flags, param):
         print(f"HSV: Hue={hsv_pixel[0]}, Saturation={hsv_pixel[1]}, Value={hsv_pixel[2]}")
         print("-" * 25)
 
-cap = cv2.VideoCapture(2) #adjust port if needed
+cap = cv2.VideoCapture(0) #adjust port if needed
 
 cv2.namedWindow("Webcam Color")
 cv2.setMouseCallback("Webcam Color", get_color_values)

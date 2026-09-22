@@ -2,15 +2,16 @@ import cv2
 import numpy as np
 import time
 
-cap = cv2.VideoCapture(2) # check if needed to change ports
+    # test if i can directly get the coordinates from the other code into this
+cap = cv2.VideoCapture(0) # check if needed to change ports
 time.sleep(3)   # reduce this if we dont get config time (but test first)
 
 colour_area = {
     "Violet" : ((125, 100, 80), (145, 200, 210), (145, 50, 180)),   #readjust all values later
     "Cyan" : ((90, 180, 230), (100, 220, 250), (250, 220, 50)),
     "Crimson" : ((170, 190, 230), (180, 210, 250), (65, 50, 240)),
-    "Marigold" : ((0, 0, 0), (15, 225, 255), (33, 107, 255)),
-    "Sky_Blue" : ((0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    "Marigold" : ((5, 210, 240), (15, 225, 255), (33, 107, 255)),
+    "Sky_Blue" : ((90, 200, 240), (100, 210, 255), (250, 225, 50)),
     "Lime_Green" : ((0, 0, 0), (0, 0, 0), (0, 0, 0))
 }
 
