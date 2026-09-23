@@ -3,11 +3,11 @@ import cv2
 anchor_points = {
     "START": (0, 0),
     "CENTER": (0, 0),
-    "RED": (0, 0),
+    "CRIMSON": (0, 0),
+    "CYAN": (0, 0),
+    "VIOLET": (0, 0),
+    "MARIGOLD": (0, 0),
     "GREEN": (0, 0),
-    "PURPLE": (0, 0),
-    "CYRAN": (0, 0),
-    "ORANGE": (0, 0),
     "BLUE": (0, 0),
     "HOME": (0, 0)
 }
