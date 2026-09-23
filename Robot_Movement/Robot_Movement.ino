@@ -1,7 +1,17 @@
+#include <ESP32Servo.h>
+
 const int LEFT_MOTOR_PIN1 = 0; // Replace with actual pin later
 const int LEFT_MOTOR_PIN2 = 0; // Replace with actual pin later
 const int RIGHT_MOTOR_PIN1 = 0; // Replace with actual pin later
 const int RIGHT_MOTOR_PIN2 = 0; // Replace with actual pin later
+
+// Servo Pins
+const int SERVO_ARM_PIN = 0; // Replace with actual pin later
+const int SERVO_GRIPPER_PIN = 0; // Replace with actual pin later
+
+Servo armServo;
+Servo gripperServo;
+bool isGripperClosed = false;
 
 void moveForward() {
   // Left motor forward
@@ -53,15 +63,36 @@ void stop() {
   digitalWrite(RIGHT_MOTOR_PIN2, LOW);
 }
 
+void rotateArmLeft() {
+  armServo.write(180); // Rotate arm to the left
+}
+
+void rotateArmRight() {
+  armServo.write(0); // Rotate arm to the right
+}
+
+void toggleGripper() {
+  if (isGripperClosed) {
+    gripperServo.write(0) // Open
+    isGripperClosed = false;
+  } else {
+    gripperServo.write(90); // Close
+    isGripperClosed = true;
+  }
+}
 
 void setup() {
   // put your setup code here, to run once:
+  Serial.begin(115200);
+
   pinMode(LEFT_MOTOR_PIN1, OUTPUT);
   pinMode(LEFT_MOTOR_PIN2, OUTPUT);
   pinMode(RIGHT_MOTOR_PIN1, OUTPUT);
   pinMode(RIGHT_MOTOR_PIN2, OUTPUT);
 
   stop();
+  gripperServo.write(0); // Start with open gripper
+  armServo.write(90); // Start with arm centered
 }
 
 void loop() {
@@ -71,7 +102,7 @@ void loop() {
 
     switch (command) {
       case 'F':
-        moveForward();
+        moveForwad();
         break;
 
       case 'B';
@@ -88,6 +119,18 @@ void loop() {
 
       case 'S';
         stop();
+        break;
+
+      case 'Q':
+        rotateArmLeft();
+        break;
+
+      case 'E';
+        rotateArmRight();
+        break;
+
+      case 'G';
+        toggleGripper();
         break;
 
       default:
