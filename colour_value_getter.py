@@ -10,7 +10,7 @@ def get_color_values(event, x, y, flags, param):
 
         h_margin, s_margin, v_margin = 10, 40, 40
 
-        # Calculate limits with strict boundaries
+        # Calculate limits with boundaries
         # Hue is capped at 179; Saturation and Value are capped at 255
         lower_h = max(0, hsv_pixel[0] - h_margin)
         lower_s = max(0, hsv_pixel[1] - s_margin)
