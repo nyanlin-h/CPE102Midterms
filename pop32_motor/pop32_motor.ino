@@ -1,26 +1,23 @@
 #include <pop32.h> 
 
-// Hardware Pins & Setup
-const int INTAKE_MOTOR_PORT = 1; // Motor 1 port
-const int RELEASE_SERVO_PORT = 1; // Servo 1 for release gate at chute exit
-const int COLOR_SENSOR_PIN = A0;  // Analog/I2C Color Sensor port near exit
+const int INTAKE_MOTOR_PORT = 1;
+const int RELEASE_SERVO_PORT = 1;
+const int COLOR_SENSOR_PIN = A0; 
 
-// Gate Positions
 const int GATE_CLOSED_ANGLE = 0;
 const int GATE_OPEN_ANGLE = 90;
 
+String lastReportedColor = "UNKNOWN";
+
 void setup() {
-  Serial.begin(115200); // Communicate with ESP32 or Python
-  
-  servo(RELEASE_SERVO_PORT, GATE_CLOSED_ANGLE); // Keep gate closed initially
-  motor(INTAKE_MOTOR_PORT, 0); // Intake off
+  Serial.begin(115200);
+  servo(RELEASE_SERVO_PORT, GATE_CLOSED_ANGLE);
+  motor(INTAKE_MOTOR_PORT, 0);
 }
 
-// Function to classify analog/I2C sensor readings into color tags
 String readChuteColorSensor() {
-  int sensorVal = analogRead(COLOR_SENSOR_PIN); // Replace with the colour sensor pins later
+  int sensorVal = analogRead(COLOR_SENSOR_PIN);
   
-  // Calibrate using  colour_value_getter parameters)
   if (sensorVal > 100 && sensorVal < 300) return "Crimson";
   if (sensorVal >= 300 && sensorVal < 500) return "Cyan";
   if (sensorVal >= 500 && sensorVal < 700) return "Violet";
@@ -31,43 +28,32 @@ String readChuteColorSensor() {
   return "UNKNOWN";
 }
 
-void startIntake() {
-  motor(INTAKE_MOTOR_PORT, 80); // Run rubber band intake forward at 80% power
-}
-
-void stopIntake() {
-  motor(INTAKE_MOTOR_PORT, 0);
-}
-
 void releaseStone() {
-  servo(RELEASE_SERVO_PORT, GATE_OPEN_ANGLE); // Open gate at chute exit
-  delay(800);                                  // Allow stone to slide out
-  servo(RELEASE_SERVO_PORT, GATE_CLOSED_ANGLE); // Close gate
+  servo(RELEASE_SERVO_PORT, GATE_OPEN_ANGLE);
+  delay(800);
+  servo(RELEASE_SERVO_PORT, GATE_CLOSED_ANGLE);
+  lastReportedColor = "UNKNOWN"; // Reset state after releasing
 }
 
 void loop() {
-  // Check for incoming commands from ESP32 or Python
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
 
-    if (cmd == "START_INTAKE") {
-      startIntake();
-    } 
-    else if (cmd == "RELEASE_STONE") {
-      releaseStone();
-    }
+    if (cmd == "START_INTAKE") motor(INTAKE_MOTOR_PORT, 80);
+    else if (cmd == "STOP_INTAKE") motor(INTAKE_MOTOR_PORT, 0);
+    else if (cmd == "RELEASE_STONE") releaseStone();
   }
 
-  // Continuously scan for stone arriving at the exit chute
-  String detectedColor = readChuteColorSensor();
-  if (detectedColor != "UNKNOWN") {
-    stopIntake(); // Stop pulling in stones while one is ready at exit
-    
-    // Send event string up to Master logic: "DETECTED_COLOR,Cyan"
+  String currentColor = readChuteColorSensor();
+  
+  // Only send serial payload ONCE when a new stone arrives
+  if (currentColor != "UNKNOWN" && currentColor != lastReportedColor) {
+    motor(INTAKE_MOTOR_PORT, 0); // Pause feeder while stone is ready
     Serial.print("DETECTED_COLOR,");
-    Serial.println(detectedColor);
-    
-    delay(500); // Debounce
+    Serial.println(currentColor);
+    lastReportedColor = currentColor;
   }
+  
+  delay(50);
 }
