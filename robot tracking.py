@@ -5,7 +5,7 @@ import serial
 import time
 
 #connect to esp32 and its port adjust the port if needed
-esp32 = serial.Serial(port='COM2', baudrate=115200, timeout=0.05)
+esp32 = serial.Serial(port='0', baudrate=115200, timeout=0.05)
 time.sleep(3) 
 
 # 2. Open overhead webcam feed channel
@@ -13,10 +13,10 @@ cap = cv2.VideoCapture(0)
 
 
 # get 2 differently coloured stickers to track head and tail
-lower_front_red = np.array([0, 150, 150])    # Front
-upper_front_red = np.array([10, 255, 255])
-lower_back_blue = np.array([100, 150, 150])  # Rear 
-upper_back_blue = np.array([120, 255, 255])
+lower_front_red = np.array([2, 88, 144])    # Front
+upper_front_red = np.array([22, 168, 224])
+lower_back_blue = np.array([8, 247, 196])  # Rear 
+upper_back_blue = np.array([28, 71, 20])
 
 def get_marker_center(frame, hsv_frame, lower_bound, upper_bound):
     #isolates and extract the colour pixel blobs
