@@ -44,7 +44,7 @@ String readTCS3200Color() {
   // If no object is close enough to trigger pulse
   if (redPW == 0 || bluePW == 0 || greenPW == 0) return "UNKNOWN";
 
-  // Simple calibration thresholds (Adjust based on your sensor readings)
+  // calibration thresholds (Adjust based on sensor readings)
   if (redPW < bluePW && redPW < greenPW && redPW < 100) return "Crimson";
   if (bluePW < redPW && bluePW < greenPW && bluePW < 100) return "Cyan";
   if (greenPW < redPW && greenPW < bluePW && greenPW < 100) return "Lime_Green";

@@ -6,9 +6,7 @@ import time
 import os
 import mediapipe as mp
 
-# ==========================================
-# 1. FIELD & ROBOT CONFIGURATION
-# ==========================================
+
 
 CENTER_PILE = (230.0, 240.0) 
 AVOID_RADIUS = 175.0 
@@ -17,9 +15,7 @@ RIGHT_EXIT_OFFSET_PX = 24.0
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 
-# ==========================================
-# 2. CALIBRATION & SERIAL SETUP
-# ==========================================
+
 
 drop_off_targets = {}
 if os.path.exists("map_drop_off.txt"):
@@ -41,9 +37,6 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 lower_front_red, upper_front_red = np.array([0, 120, 120]), np.array([10, 255, 255])
 lower_back_blue, upper_back_blue = np.array([100, 150, 100]), np.array([130, 255, 255])
 
-# ==========================================
-# 3. MEDIAPIPE GESTURE RECOGNITION SETUP
-# ==========================================
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.7)
@@ -79,9 +72,6 @@ def detect_gesture(hand_landmarks):
     
     return "NONE"
 
-# ==========================================
-# 4. HELPER FUNCTIONS
-# ==========================================
 
 def get_marker_center(hsv_frame, lower_bound, upper_bound):
     mask = cv2.inRange(hsv_frame, lower_bound, upper_bound)
@@ -108,11 +98,9 @@ def get_side_drop_target(drop_target, robot_heading_rad):
     target_y = ty - RIGHT_EXIT_OFFSET_PX * math.cos(robot_heading_rad)
     return (target_x, target_y)
 
-# ==========================================
-# 5. MAIN STATE MACHINE EXECUTION
-# ==========================================
 
-# System States: WAITING_FOR_COLLECT_GESTURE, SEARCHING_PILE, COLLECTING, WAITING_FOR_DROP_GESTURE, MOVING_TO_ARC, MOVING_TO_DROP
+
+
 nav_state = "WAITING_FOR_COLLECT_GESTURE"
 final_target = None
 detected_color = None
@@ -129,7 +117,7 @@ while True:
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-    # 1. Process Hand Gestures
+
     results = hands.process(rgb_frame)
     detected_g = "NONE"
     

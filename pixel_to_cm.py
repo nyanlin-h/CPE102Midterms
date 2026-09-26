@@ -33,7 +33,7 @@ def click_event(event, x, y, flags, param):
             print(f" -> {ratio_cm_per_px:.4f} cm / pixel")
             print(f"---------------------------\n")
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(2)
 ret, frame = cap.read()
 
 if ret:

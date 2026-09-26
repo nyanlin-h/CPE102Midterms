@@ -4,7 +4,8 @@ const int INTAKE_MOTOR_PORT = 1;
 const int RELEASE_SERVO_PORT = 1;
 
 const int GATE_CLOSED_ANGLE = 0;
-const int GATE_OPEN_ANGLE = 90;
+const int GATE_SMALL_ANGLE = 90;
+const int GATE_BIG_ANGLE = 
 
 void setup() {
   Serial.begin(115200);
@@ -16,7 +17,7 @@ void releaseStone() {
   motor(INTAKE_MOTOR_PORT, 0); // Stop intake during drop-off
   servo(RELEASE_SERVO_PORT, GATE_OPEN_ANGLE);
   delay(800);
-  servo(RELEASE_SERVO_PORT, GATE_CLOSED_ANGLE);
+  servo(RELEASE_SERVO_PORT, GATE_CLOSaED_ANGLE);
 }
 
 void loop() {

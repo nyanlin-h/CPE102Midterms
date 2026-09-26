@@ -22,7 +22,7 @@ def get_color_values(event, x, y, flags, param):
         print(f"(({lower_h}, {lower_s}, {lower_v}), ({upper_h}, {upper_s}, {upper_v}), ({bgr_pixel[0]}, {bgr_pixel[1]}, {bgr_pixel[2]}))")
         print("-" * 35)
 
-cap = cv2.VideoCapture(0)           # adjust port if necessary
+cap = cv2.VideoCapture(0)           # adjust port if necessarye
 cv2.namedWindow("Color Calibration Tool")
 cv2.setMouseCallback("Color Calibration Tool", get_color_values)
 
