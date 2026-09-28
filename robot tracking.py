@@ -4,7 +4,8 @@ import math
 import serial
 import time
 
-from navigation.py import FieldNavigator
+
+from navigation import FieldNavigator
 
 
 PX_PER_CM = 3.74
@@ -50,9 +51,6 @@ cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
-# ==========================================
-# 2. HELPER & VISUALIZATION FUNCTIONS
-# ==========================================
 
 def get_robot_pose_apriltag(frame, target_id):
     """
