@@ -57,7 +57,11 @@ void loop() {
     cmd.trim();
 
     if (cmd == "START_INTAKE") {
-      motor(INTAKE_MOTOR_PORT, 80);
+      motor(INTAKE_MOTOR_PORT, 95
+      
+      
+      
+      );
     } 
     else if (cmd == "STOP_INTAKE") {
       motor(INTAKE_MOTOR_PORT, 0);

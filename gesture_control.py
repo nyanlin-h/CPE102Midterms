@@ -69,9 +69,7 @@ def classify_gesture(landmarks):
 
     return None
 
-# ==========================================
-# 3. MAIN CAMERA & PROCESSING LOOP
-# ==========================================
+
 cap = cv2.VideoCapture(0)
 
 # Instantiate the HandLandmarker task

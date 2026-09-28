@@ -2,17 +2,17 @@ import cv2
 import numpy as np
 import time
 
-cap = cv2.VideoCapture(0)       #change ports if necessary
+cap = cv2.VideoCapture(2)       #change ports if necessary
 time.sleep(2)
 
 # Update bounds here using output from colourvaluegetter
 colour_area = {
-    "Violet": ((125, 100, 80), (145, 200, 210), (145, 50, 180)),
-    "Cyan": ((90, 180, 230), (100, 220, 250), (250, 220, 50)),
-    "Crimson": ((170, 190, 230), (180, 210, 250), (65, 50, 240)),
-    "Marigold": ((5, 210, 240), (15, 225, 255), (33, 107, 255)),
-    "Sky_Blue": ((90, 200, 240), (100, 210, 255), (250, 225, 50)),
-    "Lime_Green": ((25, 90, 45), (45, 175, 125), (40, 85, 75)),
+    "Violet": ((143, 73, 50), (163, 153, 130), (86, 50, 90)),        #HSVlow,hsvhigh, bgr
+    "Cyan": ((86, 68, 154), (106, 148, 234), (194, 178, 112)),
+    "Crimson": ((168, 93, 85), (179, 173, 165), (64, 60, 125)),
+    "Marigold": ((86, 68, 154), (106, 148, 234), (194, 178, 112)),
+    "Sky_Blue": ((88, 191, 89), (108, 255, 169), (129, 96, 12)),
+    "Lime_Green": ((59, 60, 129), (79, 140, 209), (123, 169, 103)),     #add addtional for collection area, starting point so that i can put everything into the same code at the same time.
 }
 
 drop_off_areas = {}

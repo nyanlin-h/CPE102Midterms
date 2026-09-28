@@ -1,2 +1,6 @@
-Crimson, 225, 78
-Cyan, 232, 403
+Violet, 61, 346
+Cyan, 249, 396
+Crimson, 209, 10
+Marigold, 249, 396
+Sky_Blue, 399, 68
+Lime_Green, 62, 170
