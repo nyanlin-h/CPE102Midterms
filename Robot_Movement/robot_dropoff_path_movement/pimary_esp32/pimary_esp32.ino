@@ -1,51 +1,48 @@
 #include <Arduino.h>
 #include <math.h>
-#include <ESP32Servo.h> // Library: ESP32Servo by Kevin Harrington
+#include <ESP32Servo.h>
 
 // --- Pin Assignments ---
-// Drivetrain Motors
 const int LEFT_MOTOR_PWM = 25, LEFT_MOTOR_DIR = 26;
 const int RIGHT_MOTOR_PWM = 27, RIGHT_MOTOR_DIR = 14;
 
-// 12V Intake Motor
 const int INTAKE_MOTOR_PWM = 32;
 const int INTAKE_MOTOR_DIR = 33;
 
-// Drop Gate Servo
 const int SERVO_PIN = 13;
 Servo gateServo;
 
-// Servo Angles for Dual-Stage Gate Sequence
 const int GATE_CLOSED_ANGLE = 0;   
 const int GATE_SMALL_ANGLE = 90;   
 const int GATE_BIG_ANGLE = 180;    
 
-// TCS3200 Color Sensor Pins
-const int S2 = 18;
-const int S3 = 19;
-const int OUT_PIN = 21;
+const int S2 = 18, S3 = 19, OUT_PIN = 21;
 
-// --- Motion Control Variables ---
+// --- Motion Control & Calibration Parameters ---
 volatile float robotX = 0.0, robotY = 0.0, robotHeading = 0.0;
 volatile float targetX = 0.0, targetY = 0.0;
 volatile bool hasGoal = false;
 
-// Dynamic Ramping for Heavy Robot on Slippery Surfaces
 int currentLeftSpeed = 0, currentRightSpeed = 0;
-const int MAX_PWM_STEP = 6;            // Limits acceleration per loop to prevent wheel spin
-const float DISTANCE_THRESHOLD = 5.5;   // Increased stopping distance (5.5cm) to prevent overshooting
+const int MAX_PWM_STEP = 6; 
+
+// 5.0 cm stopping distance -> 5.0 * 3.74 = 18.7 pixels
+const float DISTANCE_THRESHOLD = 18.7; 
+
+// Telemetry Watchdog Timer
+unsigned long lastTelemetryTime = 0;
+const unsigned long TIMEOUT_MS = 1000; // Stop drive if camera link drops >1sec
 
 String lastDetectedColor = "UNKNOWN";
+String rxBuffer = "";
 
 void setMotorsSmooth(int targetLeft, int targetRight) {
   targetLeft = constrain(targetLeft, -255, 255);
   targetRight = constrain(targetRight, -255, 255);
 
-  // Ramp Left Motor Speed
   if (currentLeftSpeed < targetLeft) currentLeftSpeed = min(currentLeftSpeed + MAX_PWM_STEP, targetLeft);
   else if (currentLeftSpeed > targetLeft) currentLeftSpeed = max(currentLeftSpeed - MAX_PWM_STEP, targetLeft);
 
-  // Ramp Right Motor Speed
   if (currentRightSpeed < targetRight) currentRightSpeed = min(currentRightSpeed + MAX_PWM_STEP, targetRight);
   else if (currentRightSpeed > targetRight) currentRightSpeed = max(currentRightSpeed - MAX_PWM_STEP, targetRight);
 
@@ -63,16 +60,14 @@ void setIntakeMotor(int speed) {
 
 void releaseStoneSequence() {
   setMotorsSmooth(0, 0);
-  setIntakeMotor(0); // Pause intake during discharge
+  setIntakeMotor(0);
   delay(300);
 
-  // Stage 1: Small Stone Discharge
   gateServo.write(GATE_SMALL_ANGLE);
   delay(800); 
   gateServo.write(GATE_CLOSED_ANGLE);
   delay(800); 
 
-  // Stage 2: Large Stone Clearance Sequence
   if (lastDetectedColor != "UNKNOWN" && lastDetectedColor != "NONE") {
     gateServo.write(GATE_BIG_ANGLE);
     delay(800); 
@@ -107,31 +102,41 @@ String readTCS3200Color() {
   return "UNKNOWN";
 }
 
+void parseCommand(String line) {
+  line.trim();
+  if (line.startsWith("POS,")) {
+    int c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1), c3 = line.indexOf(',', c2 + 1);
+    robotX = line.substring(c1 + 1, c2).toFloat();
+    robotY = line.substring(c2 + 1, c3).toFloat();
+    robotHeading = line.substring(c3 + 1).toFloat();
+    lastTelemetryTime = millis(); // Refresh watchdog timer
+  } 
+  else if (line.startsWith("SET_GOAL,")) {
+    int c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1);
+    targetX = line.substring(c1 + 1, c2).toFloat();
+    targetY = line.substring(c2 + 1).toFloat();
+    hasGoal = true;
+  }
+  else if (line == "START_INTAKE") {
+    setIntakeMotor(220);
+  }
+  else if (line == "STOP_INTAKE") {
+    setIntakeMotor(0);
+  }
+  else if (line == "RELEASE_STONE") {
+    releaseStoneSequence();
+  }
+}
+
+// Non-blocking serial accumulator
 void processSerialCommands() {
   while (Serial.available() > 0) {
-    String line = Serial.readStringUntil('\n');
-    line.trim();
-
-    if (line.startsWith("POS,")) {
-      int c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1), c3 = line.indexOf(',', c2 + 1);
-      robotX = line.substring(c1 + 1, c2).toFloat();
-      robotY = line.substring(c2 + 1, c3).toFloat();
-      robotHeading = line.substring(c3 + 1).toFloat();
-    } 
-    else if (line.startsWith("SET_GOAL,")) {
-      int c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1);
-      targetX = line.substring(c1 + 1, c2).toFloat();
-      targetY = line.substring(c2 + 1).toFloat();
-      hasGoal = true;
-    }
-    else if (line == "START_INTAKE") {
-      setIntakeMotor(220); // High PWM power for 7cm feeder channel
-    }
-    else if (line == "STOP_INTAKE") {
-      setIntakeMotor(0);
-    }
-    else if (line == "RELEASE_STONE") {
-      releaseStoneSequence();
+    char c = (char)Serial.read();
+    if (c == '\n') {
+      parseCommand(rxBuffer);
+      rxBuffer = "";
+    } else {
+      rxBuffer += c;
     }
   }
 }
@@ -147,12 +152,19 @@ void setup() {
 
   gateServo.attach(SERVO_PIN);
   gateServo.write(GATE_CLOSED_ANGLE);
+  lastTelemetryTime = millis();
 }
 
 void loop() {
   processSerialCommands();
 
-  // Read TCS3200 sensor continuously
+  // Watchdog Safety Check: Stop motors if tracking link stalls
+  if (hasGoal && (millis() - lastTelemetryTime > TIMEOUT_MS)) {
+    setMotorsSmooth(0, 0);
+    hasGoal = false;
+    Serial.println("NAV_TIMEOUT_SAFETY_STOP");
+  }
+
   String currentColor = readTCS3200Color();
   if (currentColor != "UNKNOWN" && currentColor != lastDetectedColor) {
     Serial.print("DETECTED_COLOR,");
@@ -160,7 +172,6 @@ void loop() {
     lastDetectedColor = currentColor;
   }
 
-  // Drive Control Logic
   if (!hasGoal) {
     setMotorsSmooth(0, 0);
     delay(20);
@@ -172,16 +183,15 @@ void loop() {
   float distance = sqrt(deltaX * deltaX + deltaY * deltaY);
 
   if (distance > DISTANCE_THRESHOLD) {
-    float desiredHeading = atan2(deltaY, deltaX);
-    float headingError = desiredHeading - robotHeading;
+    // Invert deltaY to convert OpenCV downward Y into standard Cartesian orientation
+    float desiredHeading = atan2(-deltaY, deltaX);
     
-    // Normalize heading error between -PI and +PI
-    while (headingError > M_PI)  headingError -= 2 * M_PI;
-    while (headingError < -M_PI) headingError += 2 * M_PI;
+    // Shortest-path angle wrapping using atan2(sin(e), cos(e))
+    float headingError = desiredHeading - robotHeading;
+    headingError = atan2(sin(headingError), cos(headingError));
 
-    // Smooth gain factors tuned for slippery floors & heavy weight
-    int linear = constrain((int)(distance * 6.0), 35, 140);  // Low top-speed limit (140 PWM)
-    int angular = (int)(headingError * 25.0);                 // Gentle steering gain
+    int linear = constrain((int)(distance * 1.8), 35, 140);  
+    int angular = (int)(headingError * 25.0);                 
 
     setMotorsSmooth(linear - angular, linear + angular);
   } else {

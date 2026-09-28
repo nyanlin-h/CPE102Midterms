@@ -2,133 +2,121 @@ import cv2
 import mediapipe as mp
 import serial
 import time
-import os
 
 # ==========================================
-# 1. SERIAL COMMUNICATION SETUP
+# 1. SETUP MEDIAPIPE & SERIAL LINK
 # ==========================================
-try:
-    esp32 = serial.Serial(port='COM3', baudrate=115200, timeout=0.05)
-    pop32 = serial.Serial(port='COM4', baudrate=115200, timeout=0.05)
-    time.sleep(2)
-    print("[SERIAL]: Connected to ESP32 and POP32 successfully.")
-except Exception as e:
-    print(f"[SERIAL WARNING]: Could not open COM ports ({e}). Running in simulation mode.")
-    esp32 = None
-    pop32 = None
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
 
-# Central Pile Coordinate Target
-CENTER_PILE = (230.0, 240.0)
-
-# ==========================================
-# 2. MEDIAPIPE TASKS API INITIALIZATION
-# ==========================================
-model_path = 'hand_landmarker.task'
-if not os.path.exists(model_path):
-    raise FileNotFoundError(f"Missing '{model_path}'. Please download it into this folder.")
-
-BaseOptions = mp.tasks.BaseOptions
-HandLandmarker = mp.tasks.vision.HandLandmarker
-HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
-VisionRunningMode = mp.tasks.vision.RunningMode
-
-options = HandLandmarkerOptions(
-    base_options=BaseOptions(model_asset_path=model_path),
-    running_mode=VisionRunningMode.IMAGE,
-    num_hands=1,
-    min_hand_detection_confidence=0.7,
-    min_hand_presence_confidence=0.7,
+hands = mp_hands.Hands(
+    static_image_mode=False,
+    max_num_hands=1,
+    min_detection_confidence=0.7,
     min_tracking_confidence=0.7
 )
 
-# State management to avoid spamming serial commands
-current_state = "IDLE"
+# Serial connection to ESP32 (adjust COM port if needed)
+try:
+    esp32 = serial.Serial(port='COM3', baudrate=115200, timeout=0.05)
+    time.sleep(2)
+    print("[GESTURE MODULE]: Connected to ESP32 on COM3.")
+except Exception as e:
+    print(f"[GESTURE ERROR]: Could not connect to Serial: {e}")
+    esp32 = None
 
-def classify_gesture(landmarks):
+# ==========================================
+# 2. GESTURE RECOGNITION HELPER
+# ==========================================
+def classify_hand_gesture(hand_landmarks):
     """
-    Classifies gestures based on hand landmarks using the new Tasks API output.
-    Landmark IDs: Index Tip (8), Middle Tip (12), Ring Tip (16), Pinky Tip (20).
-    PIP Joints: Index (6), Middle (10), Ring (14), Pinky (18).
+    Counts extended fingers using landmark vertical positions (Y-coordinates).
+    Landmark IDs:
+    - Thumb: Tip=4, IP=3
+    - Index: Tip=8, PIP=6
+    - Middle: Tip=12, PIP=10
+    - Ring: Tip=16, PIP=14
+    - Pinky: Tip=20, PIP=18
+    Note: OpenCV Y decreases upwards (Tip Y < PIP Y means finger is EXTENDED).
     """
-    index_open = landmarks[8].y < landmarks[6].y
-    middle_open = landmarks[12].y < landmarks[10].y
-    ring_open = landmarks[16].y < landmarks[14].y
-    pinky_open = landmarks[20].y < landmarks[18].y
+    lm = hand_landmarks.landmark
+    fingers_extended = []
 
-    # 1. Open Palm (All 4 fingers extended) -> COLLECT
-    if index_open and middle_open and ring_open and pinky_open:
-        return "COLLECT"
+    # 1. Thumb (horizontal comparison for flexibility)
+    if lm[4].x < lm[3].x:  # Assuming right hand facing camera
+        fingers_extended.append(1)
+    else:
+        fingers_extended.append(0)
 
-    # 2. Peace Sign (Index & Middle extended, Ring & Pinky closed) -> DROP
-    elif index_open and middle_open and not ring_open and not pinky_open:
-        return "DROP"
+    # 2. Four Fingers (Vertical comparison: Tip higher than PIP joint)
+    finger_tips = [8, 12, 16, 20]
+    finger_pips = [6, 10, 14, 18]
 
-    # 3. Closed Fist (All 4 fingers folded) -> IDLE
-    elif not index_open and not middle_open and not ring_open and not pinky_open:
+    for tip, pip in zip(finger_tips, finger_pips):
+        if lm[tip].y < lm[pip].y:  # Tip is higher in frame than joint
+            fingers_extended.append(1)
+        else:
+            fingers_extended.append(0)
+
+    total_extended = sum(fingers_extended)
+
+    # Map finger count to commands
+    if total_extended == 0:
         return "IDLE"
+    elif total_extended == 1 and fingers_extended[1] == 1:
+        return "COLLECT"
+    elif total_extended >= 4:
+        return "DROP"
+    
+    return "UNKNOWN"
 
-    return None
+# ==========================================
+# 3. MAIN LOOP
+# ==========================================
+cap = cv2.VideoCapture(1) # Camera index for gesture detection
+last_gesture = None
+gesture_hold_counter = 0
+CONFIRMATION_FRAMES = 5  # De-bounce filter: must hold gesture for 5 frames
 
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-cap = cv2.VideoCapture(0)
+    # Flip image horizontally for intuitive selfie-view
+    frame = cv2.flip(frame, 1)
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = hands.process(rgb_frame)
 
-# Instantiate the HandLandmarker task
-with HandLandmarker.create_from_options(options) as landmarker:
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+    current_gesture = "NO_HAND"
 
-        frame = cv2.flip(frame, 1)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Convert OpenCV BGR frame to MediaPipe Image format
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+    if results.multi_hand_landmarks:
+        for hand_landmarks in results.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            current_gesture = classify_hand_gesture(hand_landmarks)
 
-        # Process image using the new Tasks API
-        detection_result = landmarker.detect(mp_image)
+    # --- De-bounce & Send Command ---
+    if current_gesture in ["IDLE", "COLLECT", "DROP"]:
+        if current_gesture == last_gesture:
+            gesture_hold_counter += 1
+        else:
+            gesture_hold_counter = 0
+            last_gesture = current_gesture
 
-        detected_gesture = None
+        # Send command once gesture is held steady
+        if gesture_hold_counter == CONFIRMATION_FRAMES:
+            command_str = f"GESTURE,{current_gesture}\n"
+            print(f"[CMD SENT]: {command_str.strip()}")
+            if esp32 and esp32.is_open:
+                esp32.write(command_str.encode('utf-8'))
 
-        if detection_result.hand_landmarks:
-            hand_landmarks = detection_result.hand_landmarks[0] # Single hand
-            
-            # Extract landmarks and classify
-            detected_gesture = classify_gesture(hand_landmarks)
+    # Display HUD status
+    cv2.putText(frame, f"Gesture: {current_gesture}", (20, 50),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+    cv2.imshow("Gesture Control Module", frame)
 
-            # Draw visual landmarks manually (or visualization utils)
-            h, w, _ = frame.shape
-            for lm in hand_landmarks:
-                cx, cy = int(lm.x * w), int(lm.y * h)
-                cv2.circle(frame, (cx, cy), 5, (0, 255, 0), -1)
-
-        # Handle State Changes & Serial Commands
-        if detected_gesture and detected_gesture != current_state:
-            current_state = detected_gesture
-            print(f"[STATE CHANGE]: New Mode -> {current_state}")
-
-            if current_state == "IDLE":
-                if pop32: pop32.write(b"STOP_INTAKE\n")
-                if esp32: esp32.write(b"SET_GOAL,0.0,0.0\n")
-
-            elif current_state == "COLLECT":
-                if pop32: pop32.write(b"START_INTAKE\n")
-                if esp32: esp32.write(f"SET_GOAL,{CENTER_PILE[0]:.1f},{CENTER_PILE[1]:.1f}\n".encode('utf-8'))
-
-            elif current_state == "DROP":
-                if pop32: 
-                    pop32.write(b"STOP_INTAKE\n")
-                    time.sleep(0.1)
-                    pop32.write(b"RELEASE_STONE\n")
-
-        # HUD Output
-        cv2.putText(frame, f"State: {current_state}", (20, 50), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0) if current_state != "IDLE" else (0, 0, 255), 3)
-        
-        cv2.imshow("MediaPipe Tasks API Gesture Controller", frame)
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
 cap.release()
 cv2.destroyAllWindows()
