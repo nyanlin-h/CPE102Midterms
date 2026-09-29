@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import math
 import os
-from navigation import FieldNavigator
+from navigation import FieldNavigator  # Fixed import
 
 # 1. Create a dummy map file if it doesn't exist
 MAP_FILE = "map_drop_off.txt"
@@ -19,7 +19,7 @@ nav = FieldNavigator(map_filename=MAP_FILE)
 width, height = 640, 480
 frame = np.zeros((height, width, 3), dtype=np.uint8)
 
-# 3. Define simulated field positions
+# 3. Define simulated field positions (in pixel coordinates)
 robot_pos = (120.0, 120.0)
 robot_heading = math.radians(45)  # Heading in radians
 target_color = "Cyan"
@@ -31,9 +31,9 @@ arc_waypoint = nav.calculate_arc_waypoint(robot_pos, side_target)
 # 5. Draw Visualizations
 # Center Avoidance Zone & Pile
 center_pt = (int(nav.center_pile[0]), int(nav.center_pile[1]))
-cv2.circle(frame, center_pt, int(nav.avoid_radius), (0, 0, 150), 2)  # Avoidance Radius
-cv2.circle(frame, center_pt, 8, (0, 255, 255), -1)                   # Center Pile
-cv2.putText(frame, "Avoidance Zone", (center_pt[0] - 50, center_pt[1] - int(nav.avoid_radius) - 10),
+cv2.circle(frame, center_pt, int(nav.clearance_radius), (0, 0, 150), 2)  # Fixed attribute name
+cv2.circle(frame, center_pt, 8, (0, 255, 255), -1)                      # Center Pile
+cv2.putText(frame, "Avoidance Zone", (center_pt[0] - 50, center_pt[1] - int(nav.clearance_radius) - 10),
             cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
 
 # Drop targets from map file
