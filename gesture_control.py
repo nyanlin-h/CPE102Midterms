@@ -3,9 +3,7 @@ import mediapipe as mp
 import serial
 import time
 
-# ==========================================
-# 1. SETUP MEDIAPIPE & SERIAL LINK
-# ==========================================
+
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
