@@ -3,7 +3,7 @@ import numpy as np
 import time
 from config import CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, MAP_FILENAME
 
-cap = cv2.VideoCapture(CAMERA_INDEX)
+cap = cv2.VideoCapture(2)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 time.sleep(2)

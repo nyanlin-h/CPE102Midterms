@@ -1,6 +1,5 @@
-Violet, 67, 326
-Cyan, 237, 343
-Crimson, 224, 114
-Marigold, 237, 343
-Sky_Blue, 422, 116
-Lime_Green, 79, 153
+Violet, 76, 344
+Cyan, 247, 352
+Crimson, 268, 12
+Sky_Blue, 419, 114
+Lime_Green, 79, 170

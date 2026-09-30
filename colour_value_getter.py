@@ -46,7 +46,7 @@ def get_color_values(event, x, y, flags, param):
     print("-" * 45)
 
 
-cap = cv2.VideoCapture(CAMERA_INDEX)
+cap = cv2.VideoCapture(2)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 cv2.namedWindow("Color Calibration Tool")
