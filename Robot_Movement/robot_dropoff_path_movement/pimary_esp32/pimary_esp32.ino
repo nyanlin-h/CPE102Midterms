@@ -9,7 +9,7 @@ const int RIGHT_MOTOR_PWM = 27, RIGHT_MOTOR_DIR = 14;
 const int INTAKE_MOTOR_PWM = 32;
 const int INTAKE_MOTOR_DIR = 33;
 
-const int SERVO_PIN = 13;
+const int SERVO_PIN = 33;
 Servo gateServo;
 
 const int GATE_CLOSED_ANGLE = 0;   

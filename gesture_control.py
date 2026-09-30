@@ -71,7 +71,7 @@ def classify_hand_gesture(hand_landmarks):
 # ==========================================
 # 3. MAIN LOOP
 # ==========================================
-cap = cv2.VideoCapture(1) # Camera index for gesture detection
+cap = cv2.VideoCapture(0) # Camera index for gesture detection
 last_gesture = None
 gesture_hold_counter = 0
 CONFIRMATION_FRAMES = 5  # De-bounce filter: must hold gesture for 5 frames

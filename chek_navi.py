@@ -28,7 +28,7 @@ target_color = "Cyan"
 target_pos = nav.get_drop_target(target_color)
 
 if target_pos is None:
-    print(f"Target '{target_color}' not found in drop off targets.")
+    print(f"Target '{target_color}'not found in drop off targets.")
 else:
     arc_waypoint = nav.calculate_arc_waypoint(robot_pos, target_pos)
 
