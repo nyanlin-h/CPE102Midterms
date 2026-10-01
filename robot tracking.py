@@ -4,17 +4,15 @@ import math
 import socket
 import time
 
-from navigation import FieldNavigator
-from config import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
-                    ROBOT_APRILTAG_ID, AVOID_RADIUS_CM, ESP32_IP, UDP_PORT)
+from navigation_3 import FieldNavigator
+from config_3 import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
+                      ROBOT_APRILTAG_ID, AVOID_RADIUS_CM, ESP32_IP, UDP_PORT)
 
-# --- Create & Bind UDP Socket ---
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# Bind to all local interfaces on the configured UDP port so ESP32 responses can be heard
 sock.bind(("0.0.0.0", UDP_PORT))
-sock.setblocking(False)     # Non-blocking socket
+sock.setblocking(False)
 
-EMA_ALPHA = 0.65   # 0.0 = max smooth, 1.0 = raw
+EMA_ALPHA = 0.65
 
 COLOR_PALETTE = {
     "Crimson": (0, 0, 255),
@@ -30,13 +28,12 @@ detector = cv2.aruco.ArucoDetector(apriltag_dict, cv2.aruco.DetectorParameters()
 
 nav = FieldNavigator()
 
-cap = cv2.VideoCapture(CAMERA_INDEX)  # Fixed: Uses CAMERA_INDEX from config.py
+cap = cv2.VideoCapture(CAMERA_INDEX)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 
 def send(text):
-    """Sends string message via UDP to ESP32."""
     try:
         sock.sendto((text + "\n").encode("utf-8"), (ESP32_IP, UDP_PORT))
     except Exception as e:
@@ -49,16 +46,15 @@ def send_goal(pt):
 
 
 def get_robot_pose_apriltag(frame, target_id):
-    """Returns (centre_px, heading_rad, corners) or (None, None, None)."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     corners, ids, _ = detector.detectMarkers(gray)
 
     if ids is not None and target_id in ids:
         idx = np.where(ids == target_id)[0][0]
-        pts = corners[idx][0]  # [TL, TR, BR, BL]
+        pts = corners[idx][0]
         center = (float(np.mean(pts[:, 0])), float(np.mean(pts[:, 1])))
         dx = pts[1][0] - pts[0][0]
-        dy = -(pts[1][1] - pts[0][1])  # invert screen Y
+        dy = -(pts[1][1] - pts[0][1])  # Invert Y to convert image to Cartesian math
         return center, math.atan2(dy, dx), corners[idx]
     return None, None, None
 
@@ -94,11 +90,11 @@ heading_rad = 0.0
 robot_pt = None
 
 last_goal_send_time = 0.0
-GOAL_RESEND_INTERVAL = 1.5  # Re-send goal every 1.5 seconds
+GOAL_RESEND_INTERVAL = 1.5
 
 
 def handle_message(msg):
-    global nav_state, final_target, arc_pt, last_goal_send_time
+    global nav_state, final_target, arc_pt, last_goal_send_time, heading_rad, robot_pt  # Fixed Scope
 
     if msg.startswith("DETECTED_COLOR,") and nav_state == "COLLECTING":
         detected = msg.split(",")[1]
@@ -107,7 +103,7 @@ def handle_message(msg):
         target = nav.get_side_drop_target(detected, heading_rad)
         
         if target is None or target == (0.0, 0.0):
-            print(f"[WARNING]: Unmapped color '{detected}'. Routing to Starting Point (CENTER_PILE).")
+            print(f"[WARNING]: Unmapped color '{detected}'. Routing to CENTER_PILE.")
             target = CENTER_PILE
 
         if robot_pt is None:
@@ -144,20 +140,19 @@ def handle_message(msg):
         nav_state = "SEARCHING_PILE"
 
     elif msg == "NAV_TIMEOUT_SAFETY_STOP":
-        print("[WARNING]: ESP32 safety stop (lost tracking link). Re-sending goal.")
+        print("[WARNING]: Safety stop triggered. Re-sending active goal.")
         goal = {"SEARCHING_PILE": CENTER_PILE, "MOVING_TO_ARC": arc_pt,
                 "MOVING_TO_DROP": final_target}.get(nav_state, CENTER_PILE)
         send_goal(goal)
         last_goal_send_time = time.time()
 
 
-# Initial Handshake
 send("PING")
 
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("[ERROR]: Camera feed disconnected or invalid CAMERA_INDEX in config.py.")
+        print("[ERROR]: Camera feed disconnected.")
         break
 
     draw_field_ui(frame, nav.drop_off_targets, CENTER_PILE, nav.avoid_radius)
@@ -176,7 +171,6 @@ while True:
             heading_rad = math.atan2(math.sin(heading_rad + EMA_ALPHA * dh),
                                      math.cos(heading_rad + EMA_ALPHA * dh))
 
-        # Stream position via UDP during active movement[cite: 13]
         if nav_state != "RELEASING":
             send(f"POS,{robot_pt[0]:.1f},{robot_pt[1]:.1f},{heading_rad:.3f}")
 
@@ -186,14 +180,15 @@ while True:
                int(robot_pt[1] - 30 * math.sin(heading_rad)))
         cv2.arrowedLine(frame, (int(robot_pt[0]), int(robot_pt[1])), end, (0, 0, 255), 2)
 
-    # Re-transmit active goal periodically until acknowledged by ESP32[cite: 13]
+    # Fixed: Only resend active goals in moving states to prevent UDP flood during intake/release
     if time.time() - last_goal_send_time > GOAL_RESEND_INTERVAL:
-        active_goal = {"SEARCHING_PILE": CENTER_PILE, "MOVING_TO_ARC": arc_pt,
-                       "MOVING_TO_DROP": final_target}.get(nav_state, CENTER_PILE)
-        send_goal(active_goal)
+        active_goal = {"SEARCHING_PILE": CENTER_PILE, 
+                       "MOVING_TO_ARC": arc_pt,
+                       "MOVING_TO_DROP": final_target}.get(nav_state, None)
+        if active_goal is not None:
+            send_goal(active_goal)
         last_goal_send_time = time.time()
 
-    # Path Overlay
     if robot_pt is not None:
         start_pt = (int(robot_pt[0]), int(robot_pt[1]))
         if nav_state in ("SEARCHING_PILE", "COLLECTING"):
@@ -205,19 +200,20 @@ while True:
         elif nav_state == "MOVING_TO_DROP" and final_target:
             cv2.line(frame, start_pt, (int(final_target[0]), int(final_target[1])), (255, 0, 255), 2)
 
-    # Drain UDP socket buffer (Fixed buffer parameter to 1024 bytes)
+    # Multi-line UDP buffer line splitting
     try:
         while True:
             data, _ = sock.recvfrom(1024)
-            line = data.decode("utf-8", errors="ignore").strip()
-            if line:
-                handle_message(line)
+            lines = data.decode("utf-8", errors="ignore").splitlines()
+            for line in lines:
+                if line.strip():
+                    handle_message(line.strip())
     except (BlockingIOError, ConnectionResetError):
         pass  
 
     cv2.putText(frame, f"State: {nav_state}", (20, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-    cv2.imshow("Master Controller - AprilTag Tracking & Dynamic Paths", frame)
+    cv2.imshow("Master Controller", frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         send("STOP_INTAKE")
