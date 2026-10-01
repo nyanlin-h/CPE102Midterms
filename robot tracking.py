@@ -80,7 +80,6 @@ def draw_field_ui(frame, drop_targets, center_pile, avoid_radius_px):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, col, 1, cv2.LINE_AA)
 
 
-
 nav_state = "SEARCHING_PILE"
 final_target = None
 arc_pt = None
@@ -94,12 +93,18 @@ def handle_message(msg):
     if msg.startswith("DETECTED_COLOR,") and nav_state == "COLLECTING":
         detected = msg.split(",")[1]
         print(f"[STONE DETECTED]: {detected}")
-        target = nav.get_drop_target(detected)
-        if target is None:
-            print(f"[WARNING]: No drop zone mapped for '{detected}'. Ignoring.")
-            return
+        
+        # Get target location using side offset
+        target = nav.get_side_drop_target(detected, heading_rad)
+        
+        # Fallback to starting point (CENTER_PILE) if target is unmapped
+        if target is None or target == (0.0, 0.0):
+            print(f"[WARNING]: Unmapped color '{detected}'. Routing to Starting Point (CENTER_PILE).")
+            target = CENTER_PILE
+
         if robot_pt is None:
             return
+
         final_target = target
         arc_pt = nav.calculate_arc_waypoint(robot_pt, final_target)
         send("STOP_INTAKE")
@@ -113,12 +118,12 @@ def handle_message(msg):
             nav_state = "COLLECTING"
 
         elif nav_state == "MOVING_TO_ARC" and final_target:
-            print("[STATE]: Arc cleared. Heading to drop zone...")
+            print("[STATE]: Arc cleared. Heading to target...")
             send_goal(final_target)
             nav_state = "MOVING_TO_DROP"
 
         elif nav_state == "MOVING_TO_DROP":
-            print("[STATE]: At drop zone. Releasing stone...")
+            print("[STATE]: At drop target. Releasing stone...")
             send("RELEASE_STONE")
             nav_state = "RELEASING"
 
@@ -159,8 +164,7 @@ while True:
             heading_rad = math.atan2(math.sin(heading_rad + EMA_ALPHA * dh),
                                      math.cos(heading_rad + EMA_ALPHA * dh))
 
-        # Don't stream while the ESP32 is busy in its blocking release routine,
-        # otherwise its serial buffer overflows.
+        # Don't stream position during blocking servo release
         if nav_state != "RELEASING":
             send(f"POS,{robot_pt[0]:.1f},{robot_pt[1]:.1f},{heading_rad:.3f}")
 

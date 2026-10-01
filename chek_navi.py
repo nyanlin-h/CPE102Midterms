@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import math
 import os
-from navigation import FieldNavigator
+from navigation import FieldNavigator  # Updated import
 
 # 1. Create a dummy map file if it doesn't exist
 MAP_FILE = "map_drop_off.txt"
@@ -24,11 +24,11 @@ robot_pos = (120.0, 120.0)
 robot_heading = math.radians(45)  # Heading in radians
 target_color = "Cyan"
 
-# 4. Calculate Navigation Waypoints
-target_pos = nav.get_drop_target(target_color)
+# 4. Calculate Navigation Waypoints (Using side offset)
+target_pos = nav.get_side_drop_target(target_color, robot_heading)
 
-if target_pos is None:
-    print(f"Target '{target_color}'not found in drop off targets.")
+if target_pos == (0.0, 0.0) or target_pos is None:
+    print(f"Target '{target_color}' not found in drop off targets.")
 else:
     arc_waypoint = nav.calculate_arc_waypoint(robot_pos, target_pos)
 
@@ -39,6 +39,13 @@ else:
     cv2.circle(frame, center_pt, 8, (0, 255, 255), -1)
     cv2.putText(frame, "Avoidance Zone", (center_pt[0] - 50, center_pt[1] - int(nav.clearance_radius) - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+
+    # Idle Anchor Point (if present)
+    if hasattr(nav, 'idle_target'):
+        idle_pt = (int(nav.idle_target[0]), int(nav.idle_target[1]))
+        cv2.circle(frame, idle_pt, 8, (255, 0, 255), -1)
+        cv2.putText(frame, "Idle Anchor", (idle_pt[0] + 10, idle_pt[1]), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1)
 
     # Drop targets from map file
     for name, pos in nav.drop_off_targets.items():

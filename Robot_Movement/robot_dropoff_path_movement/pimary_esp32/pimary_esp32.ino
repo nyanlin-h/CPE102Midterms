@@ -35,6 +35,7 @@ const unsigned long TIMEOUT_MS = 1000; // Stop drive if camera link drops >1sec
 
 String lastDetectedColor = "UNKNOWN";
 String rxBuffer = "";
+int colorCheckCounter = 0; // Throttle counter for non-blocking color checks
 
 void setMotorsSmooth(int targetLeft, int targetRight) {
   targetLeft = constrain(targetLeft, -255, 255);
@@ -78,6 +79,9 @@ void releaseStoneSequence() {
   }
   
   lastDetectedColor = "UNKNOWN";
+
+  // Transmit RELEASE_DONE signal to Python state machine
+  Serial.println("RELEASE_DONE");
 }
 
 String readTCS3200Color() {
@@ -165,11 +169,16 @@ void loop() {
     Serial.println("NAV_TIMEOUT_SAFETY_STOP");
   }
 
-  String currentColor = readTCS3200Color();
-  if (currentColor != "UNKNOWN" && currentColor != lastDetectedColor) {
-    Serial.print("DETECTED_COLOR,");
-    Serial.println(currentColor);
-    lastDetectedColor = currentColor;
+  // Throttle color readings every 10 loops to preserve motor loop control rate
+  colorCheckCounter++;
+  if (colorCheckCounter >= 10) {
+    colorCheckCounter = 0;
+    String currentColor = readTCS3200Color();
+    if (currentColor != "UNKNOWN" && currentColor != lastDetectedColor) {
+      Serial.print("DETECTED_COLOR,");
+      Serial.println(currentColor);
+      lastDetectedColor = currentColor;
+    }
   }
 
   if (!hasGoal) {
