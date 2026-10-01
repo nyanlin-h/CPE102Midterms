@@ -3,7 +3,7 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include "esp_eap_client.h" // Modern replacement header for Enterprise WiFi logins
+#include "esp_eap_client.h"
 
 // --- Servo Configuration ---
 #define SERVO_PIN 33       
@@ -16,11 +16,11 @@
 #define ENA 23     
 
 // =========================================================================
-// --- UNIVERSITY WI-FI ENTERPRISE PROFILES (UPDATE WITH YOUR DETAILS) ---
+// --- UNIVERSITY WI-FI ENTERPRISE PROFILES ---
 // =========================================================================
 const char* WIFI_SSID = "KMUTT-Secure";     
-#define EAP_IDENTITY "69070503403"      // Put your official student ID login here (e.g., 66xxxxxxx)
-#define EAP_PASSWORD "Kmutt05p@ssword"      // Your account login password string
+#define EAP_IDENTITY "69070503403"      
+#define EAP_PASSWORD "Kmutt05p@ssword"      
 
 const unsigned int UDP_PORT = 8888;
 WiFiUDP udp;
@@ -29,7 +29,7 @@ unsigned int remotePort;
 bool hasRemoteHost = false;
 
 // ==========================================================
-// --- DRIVE WHEEL PIN ASSIGNMENTS (SHIFTED TO INENG PINS) ---
+// --- DRIVE WHEEL PIN ASSIGNMENTS ---
 // ==========================================================
 const int LEFT_MOTOR_PWM = 12;  
 const int LEFT_MOTOR_DIR = 13;  
@@ -44,13 +44,13 @@ const int RIGHT_MOTOR_DIR = 5;
 #define MOTOR_RES     8    
 
 // ==========================================================
-// --- TCS3200 COLOR SENSOR PINS (KEPT EXACTLY THE SAME) ---
+// --- TCS3200 COLOR SENSOR PINS ---
 // ==========================================================
 #define S0 14
-#define S1 27
-#define S2 26
-#define S3 25
-#define sensorOut 18
+#define S1 13
+#define S2 4
+#define S3 5
+#define sensorOut 35
 
 int redFrequency = 0;
 int greenFrequency = 0;
@@ -97,8 +97,9 @@ void setMotorsSmooth(int targetLeft, int targetRight) {
   digitalWrite(LEFT_MOTOR_DIR, currentLeftSpeed >= 0 ? HIGH : LOW);
   digitalWrite(RIGHT_MOTOR_DIR, currentRightSpeed >= 0 ? HIGH : LOW);
 
-  ledcWrite(LEFT_PWM_CH, abs(currentLeftSpeed));
-  ledcWrite(RIGHT_PWM_CH, abs(currentRightSpeed));
+  // FIXED: Core 3.x ledcWrite expects GPIO Pin Numbers instead of Channel IDs
+  ledcWrite(LEFT_MOTOR_PWM, abs(currentLeftSpeed));
+  ledcWrite(RIGHT_MOTOR_PWM, abs(currentRightSpeed));
 }
 
 void setIntakeMotor(int speed) {
@@ -110,7 +111,8 @@ void setIntakeMotor(int speed) {
     digitalWrite(MR_IN1, LOW);
     digitalWrite(MR_IN2, HIGH);
   }
-  ledcWrite(INTAKE_PWM_CH, abs(speed));
+  // FIXED: Core 3.x ledcWrite expects ENA GPIO Pin Number
+  ledcWrite(ENA, abs(speed));
 }
 
 void releaseStoneSequence() {
@@ -145,10 +147,6 @@ String readTCS3200Color() {
 
   digitalWrite(S2, LOW); digitalWrite(S3, HIGH);
   blueFrequency = pulseIn(sensorOut, LOW, 20000);
-
-  Serial.print("R = "); Serial.print(redFrequency);
-  Serial.print(" | G = "); Serial.print(greenFrequency);
-  Serial.print(" | B = "); Serial.println(blueFrequency);
 
   if (redFrequency == 0 || blueFrequency == 0 || greenFrequency == 0) return "UNKNOWN";
 
@@ -191,7 +189,7 @@ void processUDPCommands() {
     remotePort = udp.remotePort();
     hasRemoteHost = true;
 
-    char buffer[255]; // FIXED: Changed from single 'char' to character array bounds string
+    char buffer[255]; 
     int len = udp.read(buffer, 255);
     if (len > 0) {
       buffer[len] = 0;
