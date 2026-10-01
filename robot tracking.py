@@ -1,12 +1,20 @@
 import cv2
 import numpy as np
 import math
-import serial
+import socket
 import time
 
 from navigation import FieldNavigator
 from config import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
-                    ROBOT_APRILTAG_ID, SERIAL_PORT, SERIAL_BAUD, AVOID_RADIUS_CM)
+                    ROBOT_APRILTAG_ID, AVOID_RADIUS_CM)
+
+# --- Wi-Fi UDP Configuration ---
+ESP32_IP = "192.168.1.150"  # Set to your ESP32's IP address on your Wi-Fi network
+UDP_PORT = 8888             # Must match UDP_PORT in ESP32 code
+
+# Create UDP socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.setblocking(False)     # Non-blocking so python won't hang waiting for messages
 
 EMA_ALPHA = 0.65   # 0.0 = max smooth, 1.0 = raw
 
@@ -24,17 +32,14 @@ detector = cv2.aruco.ArucoDetector(apriltag_dict, cv2.aruco.DetectorParameters()
 
 nav = FieldNavigator()
 
-esp32 = serial.Serial(port=SERIAL_PORT, baudrate=SERIAL_BAUD, timeout=0.05)
-time.sleep(2)
-esp32.reset_input_buffer()
-
 cap = cv2.VideoCapture(CAMERA_INDEX)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 
 def send(text):
-    esp32.write((text + "\n").encode("utf-8"))
+    """Sends string message via UDP to ESP32."""
+    sock.sendto((text + "\n").encode("utf-8"), (ESP32_IP, UDP_PORT))
 
 
 def send_goal(pt):
@@ -94,7 +99,6 @@ def handle_message(msg):
         detected = msg.split(",")[1]
         print(f"[STONE DETECTED]: {detected}")
         
-        # Get target location using side offset
         target = nav.get_side_drop_target(detected, heading_rad)
         
         # Fallback to starting point (CENTER_PILE) if target is unmapped
@@ -164,7 +168,7 @@ while True:
             heading_rad = math.atan2(math.sin(heading_rad + EMA_ALPHA * dh),
                                      math.cos(heading_rad + EMA_ALPHA * dh))
 
-        # Don't stream position during blocking servo release
+        # Stream position via UDP during active movement
         if nav_state != "RELEASING":
             send(f"POS,{robot_pt[0]:.1f},{robot_pt[1]:.1f},{heading_rad:.3f}")
 
@@ -186,11 +190,15 @@ while True:
         elif nav_state == "MOVING_TO_DROP" and final_target:
             cv2.line(frame, start_pt, (int(final_target[0]), int(final_target[1])), (255, 0, 255), 2)
 
-    # Drain ALL pending serial lines each frame
-    while esp32.in_waiting > 0:
-        line = esp32.readline().decode("utf-8", errors="ignore").strip()
-        if line:
-            handle_message(line)
+    # Drain incoming UDP messages from ESP32
+    try:
+        while True:
+            data, _ = sock.recvfrom(1024)
+            line = data.decode("utf-8", errors="ignore").strip()
+            if line:
+                handle_message(line)
+    except BlockingIOError:
+        pass  # No data waiting in buffer
 
     cv2.putText(frame, f"State: {nav_state}", (20, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
@@ -201,5 +209,5 @@ while True:
         break
 
 cap.release()
-esp32.close()
+sock.close()
 cv2.destroyAllWindows()

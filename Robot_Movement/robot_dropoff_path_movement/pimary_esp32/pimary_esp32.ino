@@ -1,15 +1,38 @@
 #include <Arduino.h>
 #include <math.h>
 #include <ESP32Servo.h>
+#include <WiFi.h>
+#include <WiFiUdp.h>
+
+// --- Servo Configuration ---
+#define SERVO_PIN 33       // Set GPIO 33 as Servo Pin
+#define PWM_FREQ 50        // 50 Hz Frequency
+#define PWM_RESOLUTION 16  // 16-bit resolution
+
+// --- Intake Roller Motor Pins ---
+#define MR_IN1 21  // Intake motor IN1
+#define MR_IN2 22  // Intake motor IN2
+#define ENA 23     // Intake motor speed pin (PWM)
+
+
+// --- Wi-Fi Settings ---
+const char* WIFI_SSID = "KMUTT_SECURE";     // Change to your Wi-Fi Network Name
+const char* WIFI_PASS = "Kmutt05p@ssword"; // Change to your Wi-Fi Password
+const unsigned int UDP_PORT = 8888;
+
+WiFiUDP udp;
+IPAddress remoteIP;
+unsigned int remotePort;
+bool hasRemoteHost = false;
 
 // --- Pin Assignments ---
-const int LEFT_MOTOR_PWM = 25, LEFT_MOTOR_DIR = 26;
+const int LEFT_MOTOR_PWM = 26, LEFT_MOTOR_DIR = 26;
 const int RIGHT_MOTOR_PWM = 27, RIGHT_MOTOR_DIR = 14;
 
 const int INTAKE_MOTOR_PWM = 32;
 const int INTAKE_MOTOR_DIR = 33;
 
-const int SERVO_PIN = 33;
+ //correct
 Servo gateServo;
 
 const int GATE_CLOSED_ANGLE = 0;   
@@ -18,24 +41,28 @@ const int GATE_BIG_ANGLE = 180;
 
 const int S2 = 18, S3 = 19, OUT_PIN = 21;
 
-// --- Motion Control & Calibration Parameters ---
+// --- Motion Control & Parameters ---
 volatile float robotX = 0.0, robotY = 0.0, robotHeading = 0.0;
 volatile float targetX = 0.0, targetY = 0.0;
 volatile bool hasGoal = false;
 
 int currentLeftSpeed = 0, currentRightSpeed = 0;
 const int MAX_PWM_STEP = 6; 
-
-// 5.0 cm stopping distance -> 5.0 * 3.74 = 18.7 pixels
 const float DISTANCE_THRESHOLD = 18.7; 
 
-// Telemetry Watchdog Timer
 unsigned long lastTelemetryTime = 0;
-const unsigned long TIMEOUT_MS = 1000; // Stop drive if camera link drops >1sec
+const unsigned long TIMEOUT_MS = 1000; 
 
 String lastDetectedColor = "UNKNOWN";
-String rxBuffer = "";
-int colorCheckCounter = 0; // Throttle counter for non-blocking color checks
+int colorCheckCounter = 0; 
+
+void sendUDP(String message) {
+  if (hasRemoteHost) {
+    udp.beginPacket(remoteIP, remotePort);
+    udp.print(message + "\n");
+    udp.endPacket();
+  }
+}
 
 void setMotorsSmooth(int targetLeft, int targetRight) {
   targetLeft = constrain(targetLeft, -255, 255);
@@ -80,8 +107,8 @@ void releaseStoneSequence() {
   
   lastDetectedColor = "UNKNOWN";
 
-  // Transmit RELEASE_DONE signal to Python state machine
-  Serial.println("RELEASE_DONE");
+  // Transmit RELEASE_DONE signal back over UDP
+  sendUDP("RELEASE_DONE");
 }
 
 String readTCS3200Color() {
@@ -113,7 +140,7 @@ void parseCommand(String line) {
     robotX = line.substring(c1 + 1, c2).toFloat();
     robotY = line.substring(c2 + 1, c3).toFloat();
     robotHeading = line.substring(c3 + 1).toFloat();
-    lastTelemetryTime = millis(); // Refresh watchdog timer
+    lastTelemetryTime = millis();
   } 
   else if (line.startsWith("SET_GOAL,")) {
     int c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1);
@@ -132,21 +159,37 @@ void parseCommand(String line) {
   }
 }
 
-// Non-blocking serial accumulator
-void processSerialCommands() {
-  while (Serial.available() > 0) {
-    char c = (char)Serial.read();
-    if (c == '\n') {
-      parseCommand(rxBuffer);
-      rxBuffer = "";
-    } else {
-      rxBuffer += c;
+void processUDPCommands() {
+  int packetSize = udp.parsePacket();
+  if (packetSize) {
+    remoteIP = udp.remoteIP();
+    remotePort = udp.remotePort();
+    hasRemoteHost = true;
+
+    char buffer[255];
+    int len = udp.read(buffer, 255);
+    if (len > 0) {
+      buffer[len] = 0;
+      parseCommand(String(buffer));
     }
   }
 }
 
 void setup() {
   Serial.begin(115200);
+
+  // Connect Wi-Fi
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Connected!");
+  Serial.print("ESP32 IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  udp.begin(UDP_PORT);
   
   pinMode(LEFT_MOTOR_PWM, OUTPUT); pinMode(LEFT_MOTOR_DIR, OUTPUT);
   pinMode(RIGHT_MOTOR_PWM, OUTPUT); pinMode(RIGHT_MOTOR_DIR, OUTPUT);
@@ -160,23 +203,22 @@ void setup() {
 }
 
 void loop() {
-  processSerialCommands();
+  processUDPCommands();
 
-  // Watchdog Safety Check: Stop motors if tracking link stalls
+  // Watchdog Safety Check
   if (hasGoal && (millis() - lastTelemetryTime > TIMEOUT_MS)) {
     setMotorsSmooth(0, 0);
     hasGoal = false;
-    Serial.println("NAV_TIMEOUT_SAFETY_STOP");
+    sendUDP("NAV_TIMEOUT_SAFETY_STOP");
   }
 
-  // Throttle color readings every 10 loops to preserve motor loop control rate
+  // Color check throttling
   colorCheckCounter++;
   if (colorCheckCounter >= 10) {
     colorCheckCounter = 0;
     String currentColor = readTCS3200Color();
     if (currentColor != "UNKNOWN" && currentColor != lastDetectedColor) {
-      Serial.print("DETECTED_COLOR,");
-      Serial.println(currentColor);
+      sendUDP("DETECTED_COLOR," + currentColor);
       lastDetectedColor = currentColor;
     }
   }
@@ -192,10 +234,7 @@ void loop() {
   float distance = sqrt(deltaX * deltaX + deltaY * deltaY);
 
   if (distance > DISTANCE_THRESHOLD) {
-    // Invert deltaY to convert OpenCV downward Y into standard Cartesian orientation
     float desiredHeading = atan2(-deltaY, deltaX);
-    
-    // Shortest-path angle wrapping using atan2(sin(e), cos(e))
     float headingError = desiredHeading - robotHeading;
     headingError = atan2(sin(headingError), cos(headingError));
 
@@ -206,7 +245,7 @@ void loop() {
   } else {
     setMotorsSmooth(0, 0);
     hasGoal = false;
-    Serial.println("WAYPOINT_REACHED");
+    sendUDP("WAYPOINT_REACHED");
   }
 
   delay(20);
