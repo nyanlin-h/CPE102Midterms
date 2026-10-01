@@ -5,7 +5,6 @@ import socket
 import time
 
 from navigation import FieldNavigator
-# FIXED: Dynamically load ESP32_IP and UDP_PORT from config.py
 from config import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
                     ROBOT_APRILTAG_ID, AVOID_RADIUS_CM, ESP32_IP, UDP_PORT)
 
@@ -29,7 +28,7 @@ detector = cv2.aruco.ArucoDetector(apriltag_dict, cv2.aruco.DetectorParameters()
 
 nav = FieldNavigator()
 
-cap = cv2.VideoCapture(CAMERA_INDEX)
+cap = cv2.VideoCapture(2)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
@@ -43,7 +42,8 @@ def send(text):
 
 
 def send_goal(pt):
-    send(f"SET_GOAL,{pt[0]:.1f},{pt[1]:.1f}")
+    if pt is not None:
+        send(f"SET_GOAL,{pt[0]:.1f},{pt[1]:.1f}")
 
 
 def get_robot_pose_apriltag(frame, target_id):
@@ -91,9 +91,12 @@ arc_pt = None
 heading_rad = 0.0
 robot_pt = None
 
+last_goal_send_time = 0.0
+GOAL_RESEND_INTERVAL = 1.5  # Re-send goal every 1.5 seconds
+
 
 def handle_message(msg):
-    global nav_state, final_target, arc_pt
+    global nav_state, final_target, arc_pt, last_goal_send_time
 
     if msg.startswith("DETECTED_COLOR,") and nav_state == "COLLECTING":
         detected = msg.split(",")[1]
@@ -112,6 +115,7 @@ def handle_message(msg):
         arc_pt = nav.calculate_arc_waypoint(robot_pt, final_target)
         send("STOP_INTAKE")
         send_goal(arc_pt)
+        last_goal_send_time = time.time()
         nav_state = "MOVING_TO_ARC"
 
     elif msg == "WAYPOINT_REACHED":
@@ -123,6 +127,7 @@ def handle_message(msg):
         elif nav_state == "MOVING_TO_ARC" and final_target:
             print("[STATE]: Arc cleared. Heading to target...")
             send_goal(final_target)
+            last_goal_send_time = time.time()
             nav_state = "MOVING_TO_DROP"
 
         elif nav_state == "MOVING_TO_DROP":
@@ -133,19 +138,19 @@ def handle_message(msg):
     elif msg == "RELEASE_DONE" and nav_state == "RELEASING":
         print("[STATE]: Release complete. Returning to pile...")
         send_goal(CENTER_PILE)
+        last_goal_send_time = time.time()
         nav_state = "SEARCHING_PILE"
 
     elif msg == "NAV_TIMEOUT_SAFETY_STOP":
-        print("[WARNING]: ESP32 safety stop (lost tracking link). Re-sending current goal.")
+        print("[WARNING]: ESP32 safety stop (lost tracking link). Re-sending goal.")
         goal = {"SEARCHING_PILE": CENTER_PILE, "MOVING_TO_ARC": arc_pt,
-                "MOVING_TO_DROP": final_target}.get(nav_state)
-        if goal:
-            send_goal(goal)
+                "MOVING_TO_DROP": final_target}.get(nav_state, CENTER_PILE)
+        send_goal(goal)
+        last_goal_send_time = time.time()
 
 
-# Send handshake packets
+# Initial Handshake
 send("PING")
-send_goal(CENTER_PILE)
 
 while True:
     ret, frame = cap.read()
@@ -169,7 +174,7 @@ while True:
             heading_rad = math.atan2(math.sin(heading_rad + EMA_ALPHA * dh),
                                      math.cos(heading_rad + EMA_ALPHA * dh))
 
-        # Stream position via UDP during active movement
+        # Stream position via UDP during active movement[cite: 13]
         if nav_state != "RELEASING":
             send(f"POS,{robot_pt[0]:.1f},{robot_pt[1]:.1f},{heading_rad:.3f}")
 
@@ -179,7 +184,14 @@ while True:
                int(robot_pt[1] - 30 * math.sin(heading_rad)))
         cv2.arrowedLine(frame, (int(robot_pt[0]), int(robot_pt[1])), end, (0, 0, 255), 2)
 
-    # Path overlay
+    # Re-transmit active goal periodically until acknowledged by ESP32[cite: 13]
+    if time.time() - last_goal_send_time > GOAL_RESEND_INTERVAL:
+        active_goal = {"SEARCHING_PILE": CENTER_PILE, "MOVING_TO_ARC": arc_pt,
+                       "MOVING_TO_DROP": final_target}.get(nav_state, CENTER_PILE)
+        send_goal(active_goal)
+        last_goal_send_time = time.time()
+
+    # Path Overlay
     if robot_pt is not None:
         start_pt = (int(robot_pt[0]), int(robot_pt[1]))
         if nav_state in ("SEARCHING_PILE", "COLLECTING"):
@@ -191,14 +203,14 @@ while True:
         elif nav_state == "MOVING_TO_DROP" and final_target:
             cv2.line(frame, start_pt, (int(final_target[0]), int(final_target[1])), (255, 0, 255), 2)
 
-    # Drain incoming UDP messages from ESP32
+    # Drain UDP socket buffer
     try:
         while True:
-            data, _ = sock.recvfrom(1024)
+            data, _ = sock.recvfrom(8888)
             line = data.decode("utf-8", errors="ignore").strip()
             if line:
                 handle_message(line)
-    except BlockingIOError:
+    except (BlockingIOError, ConnectionResetError):
         pass  
 
     cv2.putText(frame, f"State: {nav_state}", (20, 30),

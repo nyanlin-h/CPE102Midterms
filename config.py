@@ -1,4 +1,4 @@
-CAMERA_INDEX = 0  # Updated to standard camera index (change to 1 or 2 if needed)
+CAMERA_INDEX = 2  # Updated to standard camera index (change to 1 or 2 if needed)
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 MAP_FILENAME = "map_drop_off.txt"

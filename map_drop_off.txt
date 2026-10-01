@@ -1,3 +1,2 @@
-Lime_Green, 713, 185
-Cyan, 955, 571
-Crimson, 1106, 294
+Lime_Green, 691, 155
+Crimson, 1099, 279
