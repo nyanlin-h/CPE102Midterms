@@ -25,7 +25,7 @@ def click_event(event, x, y, flags, param):
 
 def main():
     global selected_center, selected_idle, step
-    cap = cv2.VideoCapture(0)  # Open webcam
+    cap = cv2.VideoCapture(2)  # Open webcam
 
     cv2.namedWindow("Set Calibration Points")
     cv2.setMouseCallback("Set Calibration Points", click_event)

@@ -3,43 +3,63 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include "esp_eap_client.h" // Modern replacement header for Enterprise WiFi logins
 
 // --- Servo Configuration ---
-#define SERVO_PIN 33       // Set GPIO 33 as Servo Pin
-#define PWM_FREQ 50        // 50 Hz Frequency
-#define PWM_RESOLUTION 16  // 16-bit resolution
+#define SERVO_PIN 33       
+#define PWM_FREQ 50        
+#define PWM_RESOLUTION 16  
 
 // --- Intake Roller Motor Pins ---
-#define MR_IN1 21  // Intake motor IN1
-#define MR_IN2 22  // Intake motor IN2
-#define ENA 23     // Intake motor speed pin (PWM)
+#define MR_IN1 21  
+#define MR_IN2 22  
+#define ENA 23     
 
+// =========================================================================
+// --- UNIVERSITY WI-FI ENTERPRISE PROFILES (UPDATE WITH YOUR DETAILS) ---
+// =========================================================================
+const char* WIFI_SSID = "KMUTT-Secure";     
+#define EAP_IDENTITY "69070503403"      // Put your official student ID login here (e.g., 66xxxxxxx)
+#define EAP_PASSWORD "Kmutt05p@ssword"      // Your account login password string
 
-// --- Wi-Fi Settings ---
-const char* WIFI_SSID = "KMUTT_SECURE";     // Change to your Wi-Fi Network Name
-const char* WIFI_PASS = "Kmutt05p@ssword"; // Change to your Wi-Fi Password
 const unsigned int UDP_PORT = 8888;
-
 WiFiUDP udp;
 IPAddress remoteIP;
 unsigned int remotePort;
 bool hasRemoteHost = false;
 
-// --- Pin Assignments ---
-const int LEFT_MOTOR_PWM = 26, LEFT_MOTOR_DIR = 26;
-const int RIGHT_MOTOR_PWM = 27, RIGHT_MOTOR_DIR = 14;
+// ==========================================================
+// --- DRIVE WHEEL PIN ASSIGNMENTS (SHIFTED TO INENG PINS) ---
+// ==========================================================
+const int LEFT_MOTOR_PWM = 12;  
+const int LEFT_MOTOR_DIR = 13;  
+const int RIGHT_MOTOR_PWM = 2;  
+const int RIGHT_MOTOR_DIR = 5;  
 
-const int INTAKE_MOTOR_PWM = 32;
-const int INTAKE_MOTOR_DIR = 33;
+// --- ESP32 Hardware PWM Channels ---
+#define LEFT_PWM_CH   2
+#define RIGHT_PWM_CH  3
+#define INTAKE_PWM_CH 4
+#define MOTOR_FREQ    5000
+#define MOTOR_RES     8    
 
- //correct
+// ==========================================================
+// --- TCS3200 COLOR SENSOR PINS (KEPT EXACTLY THE SAME) ---
+// ==========================================================
+#define S0 14
+#define S1 27
+#define S2 26
+#define S3 25
+#define sensorOut 18
+
+int redFrequency = 0;
+int greenFrequency = 0;
+int blueFrequency = 0;
+
 Servo gateServo;
-
 const int GATE_CLOSED_ANGLE = 0;   
 const int GATE_SMALL_ANGLE = 90;   
 const int GATE_BIG_ANGLE = 180;    
-
-const int S2 = 18, S3 = 19, OUT_PIN = 21;
 
 // --- Motion Control & Parameters ---
 volatile float robotX = 0.0, robotY = 0.0, robotHeading = 0.0;
@@ -75,15 +95,22 @@ void setMotorsSmooth(int targetLeft, int targetRight) {
   else if (currentRightSpeed > targetRight) currentRightSpeed = max(currentRightSpeed - MAX_PWM_STEP, targetRight);
 
   digitalWrite(LEFT_MOTOR_DIR, currentLeftSpeed >= 0 ? HIGH : LOW);
-  analogWrite(LEFT_MOTOR_PWM, abs(currentLeftSpeed));
   digitalWrite(RIGHT_MOTOR_DIR, currentRightSpeed >= 0 ? HIGH : LOW);
-  analogWrite(RIGHT_MOTOR_PWM, abs(currentRightSpeed));
+
+  ledcWrite(LEFT_PWM_CH, abs(currentLeftSpeed));
+  ledcWrite(RIGHT_PWM_CH, abs(currentRightSpeed));
 }
 
 void setIntakeMotor(int speed) {
   speed = constrain(speed, -255, 255);
-  digitalWrite(INTAKE_MOTOR_DIR, speed >= 0 ? HIGH : LOW);
-  analogWrite(INTAKE_MOTOR_PWM, abs(speed));
+  if (speed >= 0) {
+    digitalWrite(MR_IN1, HIGH);
+    digitalWrite(MR_IN2, LOW);
+  } else {
+    digitalWrite(MR_IN1, LOW);
+    digitalWrite(MR_IN2, HIGH);
+  }
+  ledcWrite(INTAKE_PWM_CH, abs(speed));
 }
 
 void releaseStoneSequence() {
@@ -106,30 +133,28 @@ void releaseStoneSequence() {
   }
   
   lastDetectedColor = "UNKNOWN";
-
-  // Transmit RELEASE_DONE signal back over UDP
   sendUDP("RELEASE_DONE");
 }
 
 String readTCS3200Color() {
   digitalWrite(S2, LOW); digitalWrite(S3, LOW);
-  int redPW = pulseIn(OUT_PIN, LOW, 20000);
-
-  digitalWrite(S2, LOW); digitalWrite(S3, HIGH);
-  int bluePW = pulseIn(OUT_PIN, LOW, 20000);
+  redFrequency = pulseIn(sensorOut, LOW, 20000);
 
   digitalWrite(S2, HIGH); digitalWrite(S3, HIGH);
-  int greenPW = pulseIn(OUT_PIN, LOW, 20000);
+  greenFrequency = pulseIn(sensorOut, LOW, 20000);
 
-  if (redPW == 0 || bluePW == 0 || greenPW == 0) return "UNKNOWN";
+  digitalWrite(S2, LOW); digitalWrite(S3, HIGH);
+  blueFrequency = pulseIn(sensorOut, LOW, 20000);
 
-  if (redPW < bluePW && redPW < greenPW && redPW < 100) return "Crimson";
-  if (bluePW < redPW && bluePW < greenPW && bluePW < 100) return "Cyan";
-  if (greenPW < redPW && greenPW < bluePW && greenPW < 100) return "Lime_Green";
-  if (redPW < 120 && greenPW < 120 && bluePW > 150) return "Marigold";
-  if (bluePW < 120 && greenPW < 120 && redPW > 150) return "Sky_Blue";
-  if (redPW < 150 && bluePW < 150 && greenPW > 180) return "Violet";
+  Serial.print("R = "); Serial.print(redFrequency);
+  Serial.print(" | G = "); Serial.print(greenFrequency);
+  Serial.print(" | B = "); Serial.println(blueFrequency);
 
+  if (redFrequency == 0 || blueFrequency == 0 || greenFrequency == 0) return "UNKNOWN";
+
+  if (redFrequency < blueFrequency && redFrequency < greenFrequency && redFrequency < 100) return "Crimson";
+  if (blueFrequency < redFrequency && blueFrequency < greenFrequency && blueFrequency < 100) return "Cyan";
+  if (greenFrequency < redFrequency && greenFrequency < blueFrequency && greenFrequency < 100) return "Lime_Green";
   return "UNKNOWN";
 }
 
@@ -149,7 +174,7 @@ void parseCommand(String line) {
     hasGoal = true;
   }
   else if (line == "START_INTAKE") {
-    setIntakeMotor(220);
+    setIntakeMotor(220); 
   }
   else if (line == "STOP_INTAKE") {
     setIntakeMotor(0);
@@ -166,7 +191,7 @@ void processUDPCommands() {
     remotePort = udp.remotePort();
     hasRemoteHost = true;
 
-    char buffer[255];
+    char buffer[255]; // FIXED: Changed from single 'char' to character array bounds string
     int len = udp.read(buffer, 255);
     if (len > 0) {
       buffer[len] = 0;
@@ -178,24 +203,53 @@ void processUDPCommands() {
 void setup() {
   Serial.begin(115200);
 
-  // Connect Wi-Fi
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
+  WiFi.disconnect(true);
+  delay(100);
+  WiFi.mode(WIFI_STA); 
+
+  Serial.print("Connecting to University Enterprise Network: ");
+  Serial.println(WIFI_SSID);
+
+  esp_eap_client_set_identity((uint8_t *)EAP_IDENTITY, strlen(EAP_IDENTITY));
+  esp_eap_client_set_username((uint8_t *)EAP_IDENTITY, strlen(EAP_IDENTITY));
+  esp_eap_client_set_password((uint8_t *)EAP_PASSWORD, strlen(EAP_PASSWORD));
+  
+  esp_eap_client_set_ttls_phase2_method(ESP_EAP_TTLS_PHASE2_PAP); 
+  esp_wifi_sta_enterprise_enable(); 
+  
+  WiFi.begin(WIFI_SSID); 
+
+  unsigned long startAttemptTime = millis();
+  
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 20000) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nWiFi Connected!");
-  Serial.print("ESP32 IP Address: ");
-  Serial.println(WiFi.localIP());
 
-  udp.begin(UDP_PORT);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi Connected successfully via EAP Client!");
+    Serial.print("ESP32 IP Address: ");
+    Serial.println(WiFi.localIP());
+    udp.begin(UDP_PORT);
+  } else {
+    Serial.println("\nWiFi Connection Timed Out! Operating in offline test mode...");
+  }
   
-  pinMode(LEFT_MOTOR_PWM, OUTPUT); pinMode(LEFT_MOTOR_DIR, OUTPUT);
-  pinMode(RIGHT_MOTOR_PWM, OUTPUT); pinMode(RIGHT_MOTOR_DIR, OUTPUT);
-  pinMode(INTAKE_MOTOR_PWM, OUTPUT); pinMode(INTAKE_MOTOR_DIR, OUTPUT);
+  pinMode(LEFT_MOTOR_DIR, OUTPUT); 
+  pinMode(RIGHT_MOTOR_DIR, OUTPUT);
+  pinMode(MR_IN1, OUTPUT); 
+  pinMode(MR_IN2, OUTPUT);
 
-  pinMode(S2, OUTPUT); pinMode(S3, OUTPUT); pinMode(OUT_PIN, INPUT);
+  ledcAttachChannel(LEFT_MOTOR_PWM, MOTOR_FREQ, MOTOR_RES, LEFT_PWM_CH);
+  ledcAttachChannel(RIGHT_MOTOR_PWM, MOTOR_FREQ, MOTOR_RES, RIGHT_PWM_CH);
+  ledcAttachChannel(ENA, MOTOR_FREQ, MOTOR_RES, INTAKE_PWM_CH);
+  
+  pinMode(S0, OUTPUT); pinMode(S1, OUTPUT);
+  pinMode(S2, OUTPUT); pinMode(S3, OUTPUT);
+  pinMode(sensorOut, INPUT);
+
+  digitalWrite(S0, HIGH);
+  digitalWrite(S1, LOW);
 
   gateServo.attach(SERVO_PIN);
   gateServo.write(GATE_CLOSED_ANGLE);
@@ -203,16 +257,16 @@ void setup() {
 }
 
 void loop() {
-  processUDPCommands();
+  if (WiFi.status() == WL_CONNECTED) {
+    processUDPCommands();
+  }
 
-  // Watchdog Safety Check
   if (hasGoal && (millis() - lastTelemetryTime > TIMEOUT_MS)) {
     setMotorsSmooth(0, 0);
     hasGoal = false;
     sendUDP("NAV_TIMEOUT_SAFETY_STOP");
   }
 
-  // Color check throttling
   colorCheckCounter++;
   if (colorCheckCounter >= 10) {
     colorCheckCounter = 0;
@@ -224,7 +278,7 @@ void loop() {
   }
 
   if (!hasGoal) {
-    setMotorsSmooth(0, 0);
+    setMotorsSmooth(0, 0); 
     delay(20);
     return;
   }

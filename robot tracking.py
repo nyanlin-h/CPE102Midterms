@@ -5,16 +5,13 @@ import socket
 import time
 
 from navigation import FieldNavigator
+# FIXED: Dynamically load ESP32_IP and UDP_PORT from config.py
 from config import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
-                    ROBOT_APRILTAG_ID, AVOID_RADIUS_CM)
-
-# --- Wi-Fi UDP Configuration ---
-ESP32_IP = "192.168.1.150"  # Set to your ESP32's IP address on your Wi-Fi network
-UDP_PORT = 8888             # Must match UDP_PORT in ESP32 code
+                    ROBOT_APRILTAG_ID, AVOID_RADIUS_CM, ESP32_IP, UDP_PORT)
 
 # Create UDP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.setblocking(False)     # Non-blocking so python won't hang waiting for messages
+sock.setblocking(False)     # Non-blocking socket
 
 EMA_ALPHA = 0.65   # 0.0 = max smooth, 1.0 = raw
 
@@ -39,7 +36,10 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 def send(text):
     """Sends string message via UDP to ESP32."""
-    sock.sendto((text + "\n").encode("utf-8"), (ESP32_IP, UDP_PORT))
+    try:
+        sock.sendto((text + "\n").encode("utf-8"), (ESP32_IP, UDP_PORT))
+    except Exception as e:
+        print(f"[UDP ERROR]: {e}")
 
 
 def send_goal(pt):
@@ -101,7 +101,6 @@ def handle_message(msg):
         
         target = nav.get_side_drop_target(detected, heading_rad)
         
-        # Fallback to starting point (CENTER_PILE) if target is unmapped
         if target is None or target == (0.0, 0.0):
             print(f"[WARNING]: Unmapped color '{detected}'. Routing to Starting Point (CENTER_PILE).")
             target = CENTER_PILE
@@ -144,12 +143,14 @@ def handle_message(msg):
             send_goal(goal)
 
 
-# Initial goal
+# Send handshake packets
+send("PING")
 send_goal(CENTER_PILE)
 
 while True:
     ret, frame = cap.read()
     if not ret:
+        print("[ERROR]: Camera feed disconnected or invalid CAMERA_INDEX in config.py.")
         break
 
     draw_field_ui(frame, nav.drop_off_targets, CENTER_PILE, nav.avoid_radius)
@@ -198,7 +199,7 @@ while True:
             if line:
                 handle_message(line)
     except BlockingIOError:
-        pass  # No data waiting in buffer
+        pass  
 
     cv2.putText(frame, f"State: {nav_state}", (20, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)

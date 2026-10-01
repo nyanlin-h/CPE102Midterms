@@ -1,4 +1,4 @@
-CAMERA_INDEX = 2
+CAMERA_INDEX = 0  # Updated to standard camera index (change to 1 or 2 if needed)
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 MAP_FILENAME = "map_drop_off.txt"
@@ -9,3 +9,7 @@ PX_PER_CM = 3.74
 ROBOT_APRILTAG_ID = 0
 SERIAL_PORT = "COM3"
 SERIAL_BAUD = 115200
+
+# --- Wi-Fi UDP Configuration ---
+ESP32_IP = "10.44.167.27"  # Replace with your ESP32's assigned IP
+UDP_PORT = 8888
