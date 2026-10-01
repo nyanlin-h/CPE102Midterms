@@ -1,25 +1,24 @@
 import math
 import os
 
+CM_TO_PX = 3.74  # Synced calibration factor with config.py
 
-CM_TO_PX = 3.738  # Calibration factor: converts centimeters to frame pixels
-
-# Updated for 19cm x 23cm chassis dimensions to prevent pile collisions
-AVOID_RADIUS_CM = 45.0   # Clearance radius around collection area center
-ARC_MARGIN_CM = 10.0     # Buffer distance for intermediate arc waypoints
+AVOID_RADIUS_CM = 13.0    # Synced avoidance radius
+ARC_MARGIN_CM = 9.0      # Buffer distance for intermediate arc waypoints
 OFFSET_DISTANCE_CM = 15.0 # Side target offset for stone drop-offs
 
 
 class FieldNavigator:
     def __init__(self, map_filename="map_drop_off.txt", center_file="center_config.txt"):
         """
-        Initializes field navigation, dynamic coordinates, and radius thresholds.
+        Initializes field navigation, dynamic coordinates, and clearance thresholds.
         """
         # Default fallback coordinates (in pixel space)
-        self.center_pile = (320.0, 240.0)
-        self.idle_target = (100.0, 100.0)
+        self.center_pile = (230.0, 240.0)
+        self.idle_target = (230.0, 240.0)
+        self.collection_box = None  # (x1, y1, x2, y2)
 
-        # 1. Load calibration configuration (Center + Idle Anchor)
+        # 1. Load calibration configuration (Center + Box + Idle Anchor)
         self.load_center_config(center_file)
 
         # 2. Convert radius dimensions from cm to pixel values
@@ -31,24 +30,23 @@ class FieldNavigator:
 
     def load_center_config(self, filename):
         """
-        Loads the central collection area and idle anchor point from center_config.txt.
+        Loads the central collection area, box region, and idle anchor point from center_config.txt.
         """
         if os.path.exists(filename):
             try:
                 with open(filename, "r") as f:
                     for line in f:
                         parts = line.strip().split(",")
-                        if len(parts) == 3:
+                        if len(parts) >= 3:
                             label = parts[0].strip()
-                            x = float(parts[1].strip())
-                            y = float(parts[2].strip())
-
                             if label == "Center":
-                                self.center_pile = (x, y)
+                                self.center_pile = (float(parts[1]), float(parts[2]))
                             elif label == "Idle":
-                                self.idle_target = (x, y)
+                                self.idle_target = (float(parts[1]), float(parts[2]))
+                            elif label == "Box" and len(parts) == 5:
+                                self.collection_box = (int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
 
-                print(f"[FieldNavigator] Loaded Center: {self.center_pile}, Idle Anchor: {self.idle_target}")
+                print(f"[FieldNavigator] Loaded Center: {self.center_pile}, Box: {self.collection_box}, Idle: {self.idle_target}")
                 return
             except Exception as e:
                 print(f"[FieldNavigator] Error parsing {filename}: {e}")

@@ -8,8 +8,10 @@ from navigation import FieldNavigator
 from config import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
                     ROBOT_APRILTAG_ID, AVOID_RADIUS_CM, ESP32_IP, UDP_PORT)
 
-# Create UDP socket
+# --- Create & Bind UDP Socket ---
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# Bind to all local interfaces on the configured UDP port so ESP32 responses can be heard
+sock.bind(("0.0.0.0", UDP_PORT))
 sock.setblocking(False)     # Non-blocking socket
 
 EMA_ALPHA = 0.65   # 0.0 = max smooth, 1.0 = raw
@@ -28,7 +30,7 @@ detector = cv2.aruco.ArucoDetector(apriltag_dict, cv2.aruco.DetectorParameters()
 
 nav = FieldNavigator()
 
-cap = cv2.VideoCapture(2)
+cap = cv2.VideoCapture(CAMERA_INDEX)  # Fixed: Uses CAMERA_INDEX from config.py
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
@@ -203,10 +205,10 @@ while True:
         elif nav_state == "MOVING_TO_DROP" and final_target:
             cv2.line(frame, start_pt, (int(final_target[0]), int(final_target[1])), (255, 0, 255), 2)
 
-    # Drain UDP socket buffer
+    # Drain UDP socket buffer (Fixed buffer parameter to 1024 bytes)
     try:
         while True:
-            data, _ = sock.recvfrom(8888)
+            data, _ = sock.recvfrom(1024)
             line = data.decode("utf-8", errors="ignore").strip()
             if line:
                 handle_message(line)
