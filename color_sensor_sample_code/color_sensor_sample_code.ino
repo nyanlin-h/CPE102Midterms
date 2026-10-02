@@ -1,8 +1,8 @@
 #define S0 14
-#define S1 27
-#define S2 26
-#define S3 25
-#define sensorOut 18
+#define S1 13
+#define S2 4
+#define S3 5
+#define sensorOut 35
 
 int redFrequency = 0;
 int greenFrequency = 0;

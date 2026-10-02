@@ -8,8 +8,10 @@ from navigation import FieldNavigator
 from config import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
                       ROBOT_APRILTAG_ID, AVOID_RADIUS_CM, ESP32_IP, UDP_PORT)
 
+# --- UDP SOCKET CONFIGURATION ---
+# Binds to ("" / 0.0.0.0) on UDP_PORT (8888) to reliably catch incoming packets from the ESP32
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(("0.0.0.0", UDP_PORT))
+sock.bind(("", UDP_PORT))
 sock.setblocking(False)
 
 EMA_ALPHA = 0.65
@@ -42,6 +44,7 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 
 def send(text):
+    """Sends UTF-8 text packet over UDP to the ESP32 IP address."""
     try:
         sock.sendto((text + "\n").encode("utf-8"), (ESP32_IP, UDP_PORT))
     except Exception as e:
@@ -49,8 +52,8 @@ def send(text):
 
 
 def send_goal(pt):
-    # Transmit goal only when valid position tracking is established
-    if pt is not None and robot_pt is not None:
+    """Transmit target destination goal coordinates to ESP32."""
+    if pt is not None:
         send(f"SET_GOAL,{pt[0]:.1f},{pt[1]:.1f}")
 
 
@@ -99,11 +102,15 @@ heading_rad = 0.0
 robot_pt = None
 
 last_goal_send_time = 0.0
-GOAL_RESEND_INTERVAL = 1.5
+last_ping_time = 0.0
+GOAL_RESEND_INTERVAL = 1.0  # Periodic transmission interval to prevent packet loss drops
+PING_INTERVAL = 2.0
 
 
 def handle_message(msg):
     global nav_state, final_target, arc_pt, last_goal_send_time, heading_rad, robot_pt
+
+    print(f"[ESP32 MSG]: {msg}")
 
     if msg.startswith("DETECTED_COLOR,") and nav_state == "COLLECTING":
         detected = msg.split(",")[1]
@@ -150,13 +157,17 @@ def handle_message(msg):
 
     elif msg == "NAV_TIMEOUT_SAFETY_STOP":
         print("[WARNING]: Safety stop triggered. Re-sending active goal.")
-        goal = {"SEARCHING_PILE": CENTER_PILE, "MOVING_TO_ARC": arc_pt,
+        goal = {"SEARCHING_PILE": CENTER_PILE, 
+                "MOVING_TO_ARC": arc_pt,
                 "MOVING_TO_DROP": final_target}.get(nav_state, CENTER_PILE)
-        send_goal(goal)
+        if goal:
+            send_goal(goal)
         last_goal_send_time = time.time()
 
 
+# Initial Handshake Packet
 send("PING")
+last_ping_time = time.time()
 
 while True:
     ret, frame = cap.read()
@@ -189,13 +200,21 @@ while True:
                int(robot_pt[1] - 30 * math.sin(heading_rad)))
         cv2.arrowedLine(frame, (int(robot_pt[0]), int(robot_pt[1])), end, (0, 0, 255), 2)
 
-    # Selective goal resend timer prevents network congestion in idle/collecting states
+    # Handshake ping loop keeps ESP32 aware of host IP address
+    if time.time() - last_ping_time > PING_INTERVAL:
+        send("PING")
+        last_ping_time = time.time()
+
+    # Repeated command sending guarantees intake & goal state execution over UDP
     if time.time() - last_goal_send_time > GOAL_RESEND_INTERVAL:
-        active_goal = {"SEARCHING_PILE": CENTER_PILE, 
-                       "MOVING_TO_ARC": arc_pt,
-                       "MOVING_TO_DROP": final_target}.get(nav_state, None)
-        if active_goal is not None:
-            send_goal(active_goal)
+        if nav_state == "COLLECTING":
+            send("START_INTAKE")
+        else:
+            active_goal = {"SEARCHING_PILE": CENTER_PILE, 
+                           "MOVING_TO_ARC": arc_pt,
+                           "MOVING_TO_DROP": final_target}.get(nav_state, None)
+            if active_goal is not None:
+                send_goal(active_goal)
         last_goal_send_time = time.time()
 
     if robot_pt is not None:
@@ -209,6 +228,7 @@ while True:
         elif nav_state == "MOVING_TO_DROP" and final_target:
             cv2.line(frame, start_pt, (int(final_target[0]), int(final_target[1])), (255, 0, 255), 2)
 
+    # Non-blocking UDP packet processing
     try:
         while True:
             data, _ = sock.recvfrom(1024)
