@@ -6,8 +6,7 @@
 #include "esp_eap_client.h"
 #include "InEngMotor.h" //[cite: 13]
 
-// --- Hardware Driver Instantiation ---
-InEngMotor inengmotor; //[cite: 13]
+// --- Note: InEngMotor inengmotor is already declared globally inside InEngMotor.h ---
 
 // --- Servo Configuration ---
 #define SERVO_PIN 33 //[cite: 13]
@@ -226,7 +225,7 @@ void parseCommand(String line) {
     lastTelemetryTime = millis(); //[cite: 13]
   }
   else if (line == "START_INTAKE") { //[cite: 13]
-    lastDetectedColor = "UNKNOWN"; // Resets previous color lockout
+    lastDetectedColor = "UNKNOWN";
     setIntakeMotor(220); //[cite: 13]
   }
   else if (line == "STOP_INTAKE") { //[cite: 13]

@@ -4,8 +4,8 @@ import math
 import socket
 import time
 
-from navigation_3 import FieldNavigator
-from config_3 import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
+from navigation import FieldNavigator
+from config import (CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, CENTER_PILE,
                       ROBOT_APRILTAG_ID, AVOID_RADIUS_CM, ESP32_IP, UDP_PORT)
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
