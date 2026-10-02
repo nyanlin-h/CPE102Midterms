@@ -83,7 +83,7 @@ void readColorSensor() {
 
 void loop() {
   // Forward: (leftspeed, rightspeed)
-   inengmotor.forward(90, 255);
+   inengmotor.forward(110, 255);
    delay(5000);
 
   // inengmotor.backward(130, 255);

@@ -28,7 +28,15 @@ detector = cv2.aruco.ArucoDetector(apriltag_dict, cv2.aruco.DetectorParameters()
 
 nav = FieldNavigator()
 
+# Camera connection with automatic fallback sequence
 cap = cv2.VideoCapture(CAMERA_INDEX)
+if not cap.isOpened():
+    for alt_idx in [0, 1, 3]:
+        cap = cv2.VideoCapture(alt_idx)
+        if cap.isOpened():
+            print(f"[INFO]: Primary camera missing. Switched to camera index {alt_idx}")
+            break
+
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
@@ -41,7 +49,8 @@ def send(text):
 
 
 def send_goal(pt):
-    if pt is not None:
+    # Transmit goal only when valid position tracking is established
+    if pt is not None and robot_pt is not None:
         send(f"SET_GOAL,{pt[0]:.1f},{pt[1]:.1f}")
 
 
@@ -54,7 +63,7 @@ def get_robot_pose_apriltag(frame, target_id):
         pts = corners[idx][0]
         center = (float(np.mean(pts[:, 0])), float(np.mean(pts[:, 1])))
         dx = pts[1][0] - pts[0][0]
-        dy = -(pts[1][1] - pts[0][1])  # Invert Y to convert image to Cartesian math
+        dy = -(pts[1][1] - pts[0][1])
         return center, math.atan2(dy, dx), corners[idx]
     return None, None, None
 
@@ -94,7 +103,7 @@ GOAL_RESEND_INTERVAL = 1.5
 
 
 def handle_message(msg):
-    global nav_state, final_target, arc_pt, last_goal_send_time, heading_rad, robot_pt  # Fixed Scope
+    global nav_state, final_target, arc_pt, last_goal_send_time, heading_rad, robot_pt
 
     if msg.startswith("DETECTED_COLOR,") and nav_state == "COLLECTING":
         detected = msg.split(",")[1]
@@ -180,7 +189,7 @@ while True:
                int(robot_pt[1] - 30 * math.sin(heading_rad)))
         cv2.arrowedLine(frame, (int(robot_pt[0]), int(robot_pt[1])), end, (0, 0, 255), 2)
 
-    # Fixed: Only resend active goals in moving states to prevent UDP flood during intake/release
+    # Selective goal resend timer prevents network congestion in idle/collecting states
     if time.time() - last_goal_send_time > GOAL_RESEND_INTERVAL:
         active_goal = {"SEARCHING_PILE": CENTER_PILE, 
                        "MOVING_TO_ARC": arc_pt,
@@ -200,7 +209,6 @@ while True:
         elif nav_state == "MOVING_TO_DROP" and final_target:
             cv2.line(frame, start_pt, (int(final_target[0]), int(final_target[1])), (255, 0, 255), 2)
 
-    # Multi-line UDP buffer line splitting
     try:
         while True:
             data, _ = sock.recvfrom(1024)

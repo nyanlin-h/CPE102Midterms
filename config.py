@@ -15,11 +15,12 @@ if os.path.exists(CENTER_FILE):
         with open(CENTER_FILE, "r") as f:
             for line in f:
                 parts = line.strip().split(",")
-                if parts[0] == "Center" and len(parts) == 3:
+                label = parts[0].strip()
+                if label == "Center" and len(parts) == 3:
                     CENTER_PILE = (float(parts[1]), float(parts[2]))
-                elif parts[0] == "Box" and len(parts) == 5:
+                elif label == "Box" and len(parts) == 5:
                     COLLECTION_BOX = (int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
-                elif parts[0] == "Idle" and len(parts) == 3:
+                elif label == "Idle" and len(parts) == 3:
                     IDLE_ANCHOR = (float(parts[1]), float(parts[2]))
     except Exception as e:
         print(f"[CONFIG WARNING]: {e}")

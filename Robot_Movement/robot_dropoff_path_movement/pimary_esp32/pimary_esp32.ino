@@ -6,8 +6,8 @@
 #include "esp_eap_client.h"
 #include "InEngMotor.h" //[cite: 13]
 
-// --- Global Hardware Driver Instantiation ---
-InEngMotor inengmotor; // Fixed: Global motor instance[cite: 13]
+// --- Hardware Driver Instantiation ---
+InEngMotor inengmotor; //[cite: 13]
 
 // --- Servo Configuration ---
 #define SERVO_PIN 33 //[cite: 13]
@@ -47,9 +47,9 @@ const int GATE_CLOSED_ANGLE = 0;   //[cite: 13]
 const int GATE_SMALL_ANGLE  = 90;  //[cite: 13]
 const int GATE_BIG_ANGLE    = 180; //[cite: 13]
 
-// --- Motor Calibration Scaling ---
-const float LEFT_MOTOR_SCALE  = 0.353f; // 90 / 255
-const float RIGHT_MOTOR_SCALE = 1.000f; // 255 / 255
+// --- Motor Calibration Scaling (105 Left / 255 Right ratio) ---
+const float LEFT_MOTOR_SCALE  = 105.0f / 255.0f; // Scaled so full speed maps to 105
+const float RIGHT_MOTOR_SCALE = 1.000f;          // Scaled so full speed maps to 255
 
 volatile float robotX = 0.0, robotY = 0.0, robotHeading = 0.0; //[cite: 13]
 volatile float targetX = 0.0, targetY = 0.0; //[cite: 13]
@@ -65,7 +65,7 @@ const unsigned long TIMEOUT_MS = 3000; //
 String lastDetectedColor = "UNKNOWN"; //[cite: 13]
 int colorCheckCounter = 0; //[cite: 13]
 
-// --- Non-Blocking Servo Release Sequence State Machine ---
+// --- Non-Blocking Gate Release Sequence ---
 enum ReleaseState { RELEASE_IDLE, STAGE_1, STAGE_2, STAGE_3, STAGE_4, STAGE_5, STAGE_6 };
 ReleaseState releaseState = RELEASE_IDLE;
 unsigned long releaseTimer = 0;
@@ -88,10 +88,21 @@ void setMotorsSmooth(int targetLeft, int targetRight) {
   if (currentRightSpeed < targetRight) currentRightSpeed = min(currentRightSpeed + MAX_PWM_STEP, targetRight); //[cite: 13]
   else if (currentRightSpeed > targetRight) currentRightSpeed = max(currentRightSpeed - MAX_PWM_STEP, targetRight); //[cite: 13]
 
-  int compensatedLeft  = (int)(currentLeftSpeed * LEFT_MOTOR_SCALE); //
-  int compensatedRight = (int)(currentRightSpeed * RIGHT_MOTOR_SCALE); //
+  int compensatedLeft  = (int)(currentLeftSpeed * LEFT_MOTOR_SCALE);
+  int compensatedRight = (int)(currentRightSpeed * RIGHT_MOTOR_SCALE);
 
-  inengmotor.drive(compensatedLeft, compensatedRight); //
+  // Stiction threshold compensation to prevent motor stalling at low PWM
+  if (compensatedLeft > 0 && compensatedLeft < 60) compensatedLeft = 60;
+  if (compensatedLeft < 0 && compensatedLeft > -60) compensatedLeft = -60;
+  if (compensatedRight > 0 && compensatedRight < 60) compensatedRight = 60;
+  if (compensatedRight < 0 && compensatedRight > -60) compensatedRight = -60;
+
+  // Uses inengmotor.forward(105, 255) when driving forward at full speed
+  if (compensatedLeft >= 0 && compensatedRight >= 0) {
+    inengmotor.forward(compensatedLeft, compensatedRight);
+  } else {
+    inengmotor.drive(compensatedLeft, compensatedRight);
+  }
 }
 
 void setIntakeMotor(int speed) {
@@ -103,7 +114,7 @@ void setIntakeMotor(int speed) {
     digitalWrite(MR_IN1, LOW); //[cite: 13]
     digitalWrite(MR_IN2, HIGH); //[cite: 13]
   }
-  ledcWrite(INTAKE_PWM_CH, abs(speed)); //[cite: 13]
+  ledcWrite(ENA, abs(speed));
 }
 
 void startReleaseSequence() {
@@ -121,7 +132,7 @@ void updateReleaseStateMachine() {
   unsigned long elapsed = millis() - releaseTimer;
 
   switch (releaseState) {
-    case STAGE_1: // Stop motion delay
+    case STAGE_1:
       if (elapsed >= 300) {
         gateServo.write(GATE_SMALL_ANGLE); //[cite: 13]
         releaseState = STAGE_2;
@@ -129,7 +140,7 @@ void updateReleaseStateMachine() {
       }
       break;
 
-    case STAGE_2: // Small opening pulse
+    case STAGE_2:
       if (elapsed >= 800) {
         gateServo.write(GATE_CLOSED_ANGLE); //[cite: 13]
         releaseState = STAGE_3;
@@ -137,7 +148,7 @@ void updateReleaseStateMachine() {
       }
       break;
 
-    case STAGE_3: // Check color qualification
+    case STAGE_3:
       if (elapsed >= 800) {
         if (lastDetectedColor != "UNKNOWN" && lastDetectedColor != "NONE") { //[cite: 13]
           gateServo.write(GATE_BIG_ANGLE); //[cite: 13]
@@ -149,7 +160,7 @@ void updateReleaseStateMachine() {
       }
       break;
 
-    case STAGE_4: // Full release pulse
+    case STAGE_4:
       if (elapsed >= 800) {
         gateServo.write(GATE_SMALL_ANGLE); //[cite: 13]
         releaseState = STAGE_5;
@@ -157,7 +168,7 @@ void updateReleaseStateMachine() {
       }
       break;
 
-    case STAGE_5: // Gate reset
+    case STAGE_5:
       if (elapsed >= 800) {
         gateServo.write(GATE_CLOSED_ANGLE); //[cite: 13]
         releaseState = STAGE_6;
@@ -165,7 +176,7 @@ void updateReleaseStateMachine() {
       }
       break;
 
-    case STAGE_6: // Completion telemetry broadcast
+    case STAGE_6:
       if (elapsed >= 500) {
         lastDetectedColor = "UNKNOWN"; //[cite: 13]
         sendUDP("RELEASE_DONE"); //[cite: 13]
@@ -181,7 +192,6 @@ void updateReleaseStateMachine() {
 
 String readTCS3200Color() {
   digitalWrite(S2, LOW); digitalWrite(S3, LOW); //[cite: 13]
-  // Fixed: Increased timeout to 30000us (30ms) for reliable low-light reading
   redFrequency = pulseIn(sensorOut, LOW, 30000);
 
   digitalWrite(S2, HIGH); digitalWrite(S3, HIGH); //[cite: 13]
@@ -192,8 +202,9 @@ String readTCS3200Color() {
 
   if (redFrequency == 0 || blueFrequency == 0 || greenFrequency == 0) return "UNKNOWN"; //[cite: 13]
 
+  // TCS3200 logic: lower frequency = higher color intensity
   if (redFrequency < blueFrequency && redFrequency < greenFrequency && redFrequency < 120) return "Crimson"; //[cite: 13]
-  if (blueFrequency < redFrequency && blueFrequency < greenFrequency && blueFrequency < 120) return "Cyan"; //[cite: 13]
+  if (greenFrequency < redFrequency && blueFrequency < redFrequency && redFrequency > 100) return "Cyan";
   if (greenFrequency < redFrequency && greenFrequency < blueFrequency && greenFrequency < 120) return "Lime_Green"; //[cite: 13]
   return "UNKNOWN"; //[cite: 13]
 }
@@ -215,6 +226,7 @@ void parseCommand(String line) {
     lastTelemetryTime = millis(); //[cite: 13]
   }
   else if (line == "START_INTAKE") { //[cite: 13]
+    lastDetectedColor = "UNKNOWN"; // Resets previous color lockout
     setIntakeMotor(220); //[cite: 13]
   }
   else if (line == "STOP_INTAKE") { //[cite: 13]
@@ -232,8 +244,8 @@ void processUDPCommands() {
     remotePort = udp.remotePort(); //[cite: 13]
     hasRemoteHost = true; //[cite: 13]
 
-    char buffer[255]; //[cite: 13]
-    int len = udp.read(buffer, 255); //[cite: 13]
+    char buffer[256];
+    int len = udp.read(buffer, 255);
     if (len > 0) {
       buffer[len] = 0; //[cite: 13]
       parseCommand(String(buffer)); //[cite: 13]
@@ -310,9 +322,8 @@ void loop() {
     return; //[cite: 13]
   }
 
-  // --- Steering Math Inversion ---
   float deltaX = targetX - robotX; //[cite: 13]
-  float deltaY = -(targetY - robotY); // Fixed: Inverted Y-axis to match Cartesian plane
+  float deltaY = -(targetY - robotY);
   float distance = sqrt(deltaX * deltaX + deltaY * deltaY); //[cite: 13]
 
   if (distance > DISTANCE_THRESHOLD) { //[cite: 13]
