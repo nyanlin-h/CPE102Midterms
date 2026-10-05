@@ -1,2 +1,4 @@
-Marigold, 909, 340
-Lime_Green, 699, 155
+Violet, 958, 225
+Cyan, 759, 209
+Crimson, 906, 623
+Lime_Green, 769, 522

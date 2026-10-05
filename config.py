@@ -1,8 +1,10 @@
 import os
+import cv2
+cam = cv2.VideoCapture(0)
+CAMERA_INDEX = 0
 
-CAMERA_INDEX = 2
-FRAME_WIDTH = 640
-FRAME_HEIGHT = 480
+FRAME_WIDTH = int(cam.get(cv2.CAP_PROP_FRAME_WIDTH))
+FRAME_HEIGHT = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
 MAP_FILENAME = "map_drop_off.txt"
 CENTER_FILE = "center_config.txt"
 
